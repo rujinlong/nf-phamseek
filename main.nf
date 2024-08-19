@@ -19,19 +19,6 @@ include { PHAMSEEK  } from './workflows/phamseek'
 include { PIPELINE_INITIALISATION } from './subworkflows/local/utils_nfcore_phamseek_pipeline'
 include { PIPELINE_COMPLETION     } from './subworkflows/local/utils_nfcore_phamseek_pipeline'
 
-include { getGenomeAttribute      } from './subworkflows/local/utils_nfcore_phamseek_pipeline'
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    GENOME PARAMETER VALUES
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-// TODO nf-core: Remove this line if you don't need a FASTA file
-//   This is an example of how to use getGenomeAttribute() to fetch parameters
-//   from igenomes.config using `--genome`
-params.fasta = getGenomeAttribute('fasta')
-
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     NAMED WORKFLOWS FOR PIPELINE
@@ -41,7 +28,7 @@ params.fasta = getGenomeAttribute('fasta')
 //
 // WORKFLOW: Run main analysis pipeline depending on type of input
 //
-workflow RUJINLONG_PHAMSEEK {
+workflow PHAMSEEK_MAIN {
 
     take:
     samplesheet // channel: samplesheet read in from --input
@@ -85,7 +72,7 @@ workflow {
     //
     // WORKFLOW: Run main workflow
     //
-    RUJINLONG_PHAMSEEK (
+    PHAMSEEK_MAIN (
         PIPELINE_INITIALISATION.out.samplesheet
     )
 
@@ -99,7 +86,7 @@ workflow {
         params.outdir,
         params.monochrome_logs,
         params.hook_url,
-        RUJINLONG_PHAMSEEK.out.multiqc_report
+        PHAMSEEK_MAIN.out.multiqc_report
     )
 }
 
