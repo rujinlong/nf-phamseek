@@ -1,0 +1,185 @@
+# =============================================================================
+# phamseek — Apptainer image definition
+# -----------------------------------------------------------------------------
+# Route C of the phamseek delivery: one .sif file, no host conda, no host glibc
+# dependency. Use it when the target machine is air-gapped, has an old glibc,
+# or when institutional policy prefers a single immutable artefact.
+#
+# BUILD INPUTS — this definition never solves or downloads conda packages.
+# It consumes the SAME pixi-pack payload that route B ships, so the container
+# and the offline bundle contain byte-identical software. Solving inside the
+# container would make pixi.lock decorative.
+#
+# Build it with the wrapper, which stages the inputs for you:
+#
+#     deploy/apptainer/build_sif.sh
+#
+# or by hand, from a staging directory that contains phamseek-env.sh,
+# pipeline/ and nxf-home/:
+#
+#     cd <staging-dir>
+#     apptainer build phamseek.sif <repo>/deploy/apptainer/phamseek.def
+#
+# REFERENCE DATABASES ARE NEVER IN THE IMAGE. They are bound at run time:
+#
+#     apptainer run --cleanenv \
+#         -B /data/run01:/work \
+#         -B /data/databases:/db:ro \
+#         phamseek.sif --input /work/samplesheet.csv --outdir /work/results \
+#                      --db_dir /db
+#
+# Bind-mount contract (all three directories exist in the image):
+#     /work   read-write   inputs, outputs, Nextflow work directory
+#     /db     read-only    reference databases (--db_dir /db)
+#     /cache  read-write   optional; scratch for tools that cache
+# =============================================================================
+
+Bootstrap: docker
+From: debian:12-slim
+
+%files
+    # The packed conda environment (built by deploy/pack_offline.sh).
+    phamseek-env.sh   /opt/phamseek/phamseek-env.sh
+    # The pipeline source tree.
+    pipeline          /opt/phamseek/pipeline
+    # Nextflow plugins, pre-fetched so the container never reaches github.com.
+    nxf-home          /opt/phamseek/nxf-home
+
+%post
+    set -eux
+
+    # -- OS layer -------------------------------------------------------------
+    # ca-certificates is NOT optional even though nothing here goes online:
+    # pixi-unpack builds a reqwest HTTP client at start-up and panics with
+    # "No CA certificates were loaded from the system" on a bare debian:12-slim.
+    # Verified 2026-08-07 — the unpack fails before extracting a single package.
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ca-certificates bash procps tar gzip zstd locales
+    rm -rf /var/lib/apt/lists/*
+
+    # Nextflow and Groovy mishandle non-ASCII paths under a POSIX locale.
+    sed -i 's/^# *\(C.UTF-8\)/\1/' /etc/locale.gen || true
+    locale-gen C.UTF-8 || true
+
+    # -- Environment ----------------------------------------------------------
+    chmod +x /opt/phamseek/phamseek-env.sh
+    cd /opt/phamseek
+    ./phamseek-env.sh --output-directory /opt/phamseek
+    rm -f /opt/phamseek/phamseek-env.sh
+    test -x /opt/phamseek/env/bin/nextflow
+
+    # -- Bind-mount contract --------------------------------------------------
+    mkdir -p /work /db /cache
+    chmod 777 /work /cache
+
+    # -- Login shells --------------------------------------------------------
+    # %environment covers `apptainer exec <cmd>` and `apptainer shell`, but a
+    # login shell (`bash -lc`, and anything wrapping a command in one) sources
+    # /etc/profile, which assigns PATH outright and discards what %environment
+    # prepended. Without this file `apptainer exec img bash -lc 'kraken2 ...'`
+    # fails with "command not found" while the identical command without -l
+    # works -- a difference that costs an afternoon to track down on someone
+    # else's machine.
+    cat > /etc/profile.d/phamseek.sh <<'PROFILE'
+case ":${PATH}:" in
+    *:/opt/phamseek/env/bin:*) ;;
+    *) PATH="/opt/phamseek/env/bin:${PATH}" ;;
+esac
+export PATH
+export CONDA_PREFIX=/opt/phamseek/env
+export JAVA_HOME=/opt/phamseek/env/lib/jvm
+export NXF_HOME=/opt/phamseek/nxf-home
+export NXF_OFFLINE=true
+export NXF_DISABLE_CHECK_LATEST=true
+PROFILE
+    chmod 644 /etc/profile.d/phamseek.sh
+
+    # -- Provenance -----------------------------------------------------------
+    {
+        echo "built_utc=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+        echo "base=debian:12-slim"
+        echo "arch=$(uname -m)"
+        echo "glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null || echo unknown)"
+    } > /opt/phamseek/BUILD_INFO
+
+%environment
+    # A packed prefix has no bin/activate — activation is explicit here.
+    # The activate.d scripts are what set JAVA_HOME; without them Nextflow
+    # picks up whatever JVM the base image happens to have (none, here).
+    export CONDA_PREFIX=/opt/phamseek/env
+    export PATH="/opt/phamseek/env/bin:${PATH}"
+    export JAVA_HOME="/opt/phamseek/env/lib/jvm"
+    export GSETTINGS_SCHEMA_DIR="/opt/phamseek/env/share/glib-2.0/schemas"
+
+    # Nextflow: use only the plugins baked in, and never phone home.
+    export NXF_HOME=/opt/phamseek/nxf-home
+    export NXF_OFFLINE=true
+    export NXF_DISABLE_CHECK_LATEST=true
+
+    export PHAMSEEK_ROOT=/opt/phamseek
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+%runscript
+    #!/bin/bash
+    set -euo pipefail
+    # NXF_HOME must be writable — Nextflow writes history and locks there.
+    # The baked-in one is read-only inside a SIF, so mirror it into the work
+    # directory on first use. Copying 2 MiB of plugins is cheaper than
+    # explaining a read-only-filesystem stack trace.
+    RW_NXF_HOME="${PHAMSEEK_WORK:-/work}/.nxf-home"
+    if [ ! -d "${RW_NXF_HOME}/plugins" ]; then
+        mkdir -p "${RW_NXF_HOME}"
+        cp -a /opt/phamseek/nxf-home/. "${RW_NXF_HOME}/" 2>/dev/null || true
+    fi
+    export NXF_HOME="${RW_NXF_HOME}"
+    exec nextflow -c /opt/phamseek/pipeline/deploy/offline.config \
+         run /opt/phamseek/pipeline/main.nf "$@"
+
+%test
+    set -eu
+    export PATH="/opt/phamseek/env/bin:${PATH}"
+    export JAVA_HOME="/opt/phamseek/env/lib/jvm"
+    echo "--- tool versions ---"
+    kraken2 --version | head -1
+    nextflow -version 2>&1 | grep -i version | head -1
+    genomad --version
+    checkv -h > /dev/null 2>&1 && echo "checkv OK"
+    seqkit version
+    fastp --version 2>&1 | head -1
+    echo "--- all core tools present ---"
+
+%labels
+    Name          phamseek
+    Description   Phage detection in clinical metagenomes (kraken2 + geNomad + CheckV)
+    Author        Jinlong Ru
+    Homepage      https://github.com/rujinlong/phamseek
+
+%help
+    phamseek — phage detection in clinical metagenomes.
+
+    Reference databases are NOT in this image. Bind them at run time.
+
+      apptainer run --cleanenv \
+        -B /data/run01:/work \
+        -B /data/databases:/db:ro \
+        phamseek.sif \
+          --input /work/samplesheet.csv \
+          --outdir /work/results \
+          --db_dir /db
+
+    Bind points: /work (rw, I/O + Nextflow work dir) · /db (ro, databases)
+                 /cache (rw, optional scratch)
+
+    --cleanenv is strongly recommended: it stops a host CONDA_PREFIX,
+    PYTHONPATH or LD_LIBRARY_PATH from leaking in and shadowing the
+    container's own libraries.
+
+    Check the host and the database first:
+      apptainer exec phamseek.sif /opt/phamseek/pipeline/deploy/preflight.sh \
+        --offline --db-dir /db/kraken2
+
+    Run any bundled tool directly:
+      apptainer exec -B /data:/work phamseek.sif kraken2 --version
