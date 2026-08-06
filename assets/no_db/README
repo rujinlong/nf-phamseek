@@ -1,0 +1,1 @@
+Placeholder used when a database channel is required but the corresponding step is disabled (or under -stub). Never read by any tool.

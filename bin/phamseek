@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+#
+# phamseek — single-command entry point.
+#
+# Everything below this script (Nextflow, pixi, the individual tools) is an
+# implementation detail. Users should never need to know it is a Nextflow
+# pipeline.
+#
+set -euo pipefail
+
+# Resolve the repository root from this script's own location, so the command
+# works from any working directory and through a symlink on PATH.
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do
+    LINK="$(readlink "$SELF")"
+    case "$LINK" in
+        /*) SELF="$LINK" ;;
+        *)  SELF="$(dirname "$SELF")/$LINK" ;;
+    esac
+done
+REPO_ROOT="$(cd "$(dirname "$SELF")/.." && pwd)"
+MANIFEST="${REPO_ROOT}/pixi.toml"
+
+BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[0;31m'; YEL=$'\033[0;33m'; RST=$'\033[0m'
+if [ ! -t 1 ]; then BOLD=""; DIM=""; RED=""; YEL=""; RST=""; fi
+
+die() { echo "${RED}phamseek: $*${RST}" >&2; exit 1; }
+warn() { echo "${YEL}phamseek: $*${RST}" >&2; }
+
+usage() {
+    cat <<EOF
+${BOLD}phamseek${RST} — phage detection in low-biomass clinical Oxford Nanopore metagenomes
+
+${BOLD}USAGE${RST}
+    phamseek <command> [options]
+
+${BOLD}COMMANDS${RST}
+    run          Analyse a set of samples
+    test         Run the bundled smoke test (needs --db_dir)
+    install      Install or verify the software environment
+    doctor       Check that the environment and databases are usable
+    version      Print the pipeline version
+    help         Show this text; 'phamseek run --help' lists every option
+
+${BOLD}QUICK START${RST}
+    phamseek install
+    phamseek run --input samplesheet.csv --db_dir /path/to/phamseek_db --outdir results
+
+${BOLD}SAMPLESHEET${RST} (CSV, header required)
+    sample_id,fastq,platform,sample_type
+    plasma_01,reads/plasma_01.fastq.gz,ont,sample
+    ntc_01,reads/ntc_01.fastq.gz,ont,ntc
+
+    fastq paths may be absolute, or relative to the samplesheet's own directory.
+    sample_type is one of sample | ntc | positive_control.
+
+${BOLD}DATABASE LAYOUT${RST} (--db_dir)
+    <db_dir>/kraken2/   kraken2 database (hash.k2d, opts.k2d, taxo.k2d)
+    <db_dir>/host/      host reference for level-2 depletion (.mmi or FASTA)
+
+${BOLD}COMMON OPTIONS${RST}
+    --input FILE            samplesheet (required)
+    --db_dir DIR            database root (required unless --kraken2_db is given)
+    --outdir DIR            output directory (default: results)
+    --db_has_decoy          declare that the kraken2 database contains decoy
+                            sequences; changes how the report words its caveats
+    --db_label NAME         database name recorded in the report
+    --skip_host_removal     skip the level-2 aligner (development only)
+    --resume                continue a previous run instead of restarting
+    -stub                   dry-run the wiring without executing any tool
+
+${DIM}Results: <outdir>/summary/phamseek_report.html
+NOT FOR CLINICAL DIAGNOSIS — v0.1 reports read-level evidence only.${RST}
+EOF
+}
+
+require_pixi() {
+    command -v pixi >/dev/null 2>&1 || die \
+"pixi was not found on PATH.
+  pixi is a single static binary and needs no root:
+      curl -fsSL https://pixi.sh/install.sh | bash
+  On an offline host, copy the pixi binary and this repository across, then run
+  'phamseek install' with the pre-populated package cache. See deploy/INSTALL.md."
+}
+
+ensure_env() {
+    require_pixi
+    if [ ! -d "${REPO_ROOT}/.pixi/envs/default" ]; then
+        echo "${DIM}phamseek: installing the software environment (first run only)...${RST}" >&2
+        pixi install --manifest-path "$MANIFEST" >&2 \
+            || die "'pixi install' failed. On an offline host see deploy/INSTALL.md."
+    fi
+}
+
+activate_env() {
+    # The same activation the pipeline applies to every task, so the Nextflow
+    # launcher itself and the tools see one environment.
+    set +u
+    eval "$(pixi shell-hook -s bash --no-completions --change-ps1 false --manifest-path "$MANIFEST")"
+    set -u
+}
+
+# Nextflow downloads plugins on first use. That is the one hidden network call
+# in an otherwise offline pipeline, so it is made explicit here.
+configure_offline() {
+    local nxf_home="${NXF_HOME:-$HOME/.nextflow}"
+    if [ -d "${nxf_home}/plugins" ] && compgen -G "${nxf_home}/plugins/nf-validation-*" >/dev/null; then
+        export NXF_OFFLINE="${NXF_OFFLINE:-true}"
+    elif [ "${NXF_OFFLINE:-}" = "true" ]; then
+        die \
+"NXF_OFFLINE=true but the nf-validation plugin is not cached in ${nxf_home}/plugins.
+  Pre-fetch it on a networked machine and copy that directory across; see deploy/INSTALL.md."
+    else
+        warn "the nf-validation plugin is not cached yet; this run needs network access once."
+    fi
+}
+
+cmd_run() {
+    ensure_env
+    activate_env
+    configure_offline
+
+    local args=() profiles=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --resume)  args+=("-resume") ;;
+            --profile) profiles="$2"; shift ;;
+            --help|-h) args+=("--help") ;;
+            *)         args+=("$1") ;;
+        esac
+        shift
+    done
+
+    local nf=("nextflow" "run" "${REPO_ROOT}/main.nf")
+    [ -n "$profiles" ] && nf+=("-profile" "$profiles")
+    exec "${nf[@]}" "${args[@]}"
+}
+
+cmd_test() {
+    ensure_env
+    activate_env
+    configure_offline
+    exec nextflow run "${REPO_ROOT}/main.nf" -profile test "$@"
+}
+
+cmd_doctor() {
+    require_pixi
+    echo "${BOLD}repository${RST}   ${REPO_ROOT}"
+    if [ -d "${REPO_ROOT}/.pixi/envs/default" ]; then
+        echo "${BOLD}environment${RST}  installed"
+    else
+        echo "${BOLD}environment${RST}  ${YEL}not installed — run 'phamseek install'${RST}"
+        return 0
+    fi
+    activate_env
+    local ok=0
+    for t in nextflow chopper nanoq minimap2 samtools kraken2 bracken pigz python3; do
+        if command -v "$t" >/dev/null 2>&1; then
+            printf '  %-10s %s\n' "$t" "ok"
+        else
+            printf '  %-10s %s\n' "$t" "${RED}MISSING${RST}"; ok=1
+        fi
+    done
+    local nxf_home="${NXF_HOME:-$HOME/.nextflow}"
+    if compgen -G "${nxf_home}/plugins/nf-validation-*" >/dev/null 2>&1; then
+        echo "  nf-validation plugin cached (offline-capable)"
+    else
+        echo "  ${YEL}nf-validation plugin not cached — first run needs network${RST}"
+    fi
+    return $ok
+}
+
+cmd_install() {
+    require_pixi
+    pixi install --manifest-path "$MANIFEST"
+    echo "phamseek: environment ready. Verify with 'phamseek doctor'."
+}
+
+case "${1:-help}" in
+    run)              shift; cmd_run "$@" ;;
+    test)             shift; cmd_test "$@" ;;
+    install)          shift; cmd_install "$@" ;;
+    doctor)           shift; cmd_doctor "$@" ;;
+    version|--version) grep -oP "version\s*=\s*'\K[^']+" "${REPO_ROOT}/nextflow.config" | head -n1 ;;
+    help|--help|-h)   usage ;;
+    *)                echo "phamseek: unknown command '$1'" >&2; echo >&2; usage; exit 1 ;;
+esac

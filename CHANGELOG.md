@@ -1,16 +1,22 @@
-# rujinlong/phamseek: Changelog
+# Changelog
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## v0.1.0
 
-## v1.0dev - [date]
+First working version. Read-level (Tier 1) analysis of Oxford Nanopore reads from
+low-biomass clinical samples.
 
-Initial release of rujinlong/phamseek, created with the [nf-core](https://nf-co.re/) template.
-
-### `Added`
-
-### `Fixed`
-
-### `Dependencies`
-
-### `Deprecated`
+- Single command: `bin/phamseek run`.
+- Dependencies pinned by pixi (`pixi.lock`, linux-64 and linux-aarch64), one environment
+  activated per task via `pixi shell-hook`.
+- Samplesheet validation: uniqueness, readability, gzip integrity, platform and
+  sample-type vocabularies; relative FASTQ paths resolve against the samplesheet.
+- QC with chopper and nanoq, before and after.
+- kraken2 at `--confidence 0.02`, one pass over every read.
+- Two-level host depletion: kraken2 subtree deletion, then minimap2 against CHM13v2.
+  Both levels report their removal counts.
+- Optional bracken; skipped with a warning when the database lacks k-mer distributions.
+- Per-sample TSV/JSON and a self-contained run-level HTML report with no external
+  resources.
+- Chimera diagnostics, explicitly labelled as non-specific auxiliary signals.
+- Database manifest pinning the database that produced each result.
+- `--mode full` (assembly tier) fails with an explanation rather than running partially.

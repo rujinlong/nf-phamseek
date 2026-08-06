@@ -2,158 +2,227 @@
     "$schema": "http://json-schema.org/draft-07/schema",
     "$id": "https://raw.githubusercontent.com/rujinlong/phamseek/master/nextflow_schema.json",
     "title": "rujinlong/phamseek pipeline parameters",
-    "description": "Detect protein family in phages across multiple datasets.",
+    "description": "Phage detection in low-biomass clinical Oxford Nanopore metagenomes.",
     "type": "object",
     "definitions": {
         "input_output_options": {
             "title": "Input/output options",
             "type": "object",
             "fa_icon": "fas fa-terminal",
-            "description": "Define where the pipeline should find input data and save output data.",
-            "required": ["input", "outdir"],
+            "required": ["input"],
             "properties": {
                 "input": {
                     "type": "string",
                     "format": "file-path",
-                    "exists": true,
-                    "schema": "assets/schema_input.json",
                     "mimetype": "text/csv",
-                    "pattern": "^\\S+\\.csv$",
-                    "description": "Path to comma-separated file containing information about the samples in the experiment.",
-                    "help_text": "You will need to create a design file with information about the samples in your experiment before running the pipeline. Use this parameter to specify its location. It has to be a comma-separated file with 3 columns, and a header row.",
+                    "description": "Samplesheet: sample_id,fastq[,platform][,sample_type].",
+                    "help_text": "CSV with a header row. `sample_id` must be unique and free of whitespace. `fastq` may be absolute or relative to the samplesheet's own directory. `platform` defaults to `ont` (the only value implemented in v0.1). `sample_type` is one of `sample`, `ntc`, `positive_control`; taxa also seen in an `ntc` are flagged in the report, but never subtracted.",
                     "fa_icon": "fas fa-file-csv"
                 },
                 "outdir": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "The output directory where the results will be saved. You have to use absolute paths to storage on Cloud infrastructure.",
+                    "description": "Output directory.",
+                    "default": "results",
                     "fa_icon": "fas fa-folder-open"
                 },
-                "email": {
+                "mode": {
                     "type": "string",
-                    "description": "Email address for completion summary.",
-                    "fa_icon": "fas fa-envelope",
-                    "help_text": "Set this parameter to your e-mail address to get a summary e-mail with details of the run sent to you when the workflow exits. If set in your user config file (`~/.nextflow/config`) then you don't need to specify this on the command line for every run.",
-                    "pattern": "^([a-zA-Z0-9_\\-\\.]+)@([a-zA-Z0-9_\\-\\.]+)\\.([a-zA-Z]{2,5})$"
-                },
-                "multiqc_title": {
-                    "type": "string",
-                    "description": "MultiQC report title. Printed as page header, used for filename if not otherwise specified.",
-                    "fa_icon": "fas fa-file-signature"
+                    "default": "fast",
+                    "enum": ["fast", "full"],
+                    "description": "Analysis tier. Only `fast` is implemented in v0.1.",
+                    "help_text": "`fast` is read-level: QC, kraken2, two-level host depletion, bracken, report. `full` would add assembly (flye), geNomad and CheckV; it is deliberately not wired up in v0.1 and fails immediately with an explanation rather than running a partial path.",
+                    "fa_icon": "fas fa-layer-group"
                 }
             }
         },
-        "reference_genome_options": {
-            "title": "Reference genome options",
+        "database_options": {
+            "title": "Reference databases",
             "type": "object",
-            "fa_icon": "fas fa-dna",
-            "description": "Reference genome related files and options required for the workflow.",
+            "fa_icon": "fas fa-database",
+            "description": "Databases are always external to the repository and are never copied into the work directory.",
             "properties": {
-                "genome": {
+                "db_dir": {
                     "type": "string",
-                    "description": "Name of iGenomes reference.",
-                    "fa_icon": "fas fa-book",
-                    "help_text": "If using a reference genome configured in the pipeline using iGenomes, use this parameter to give the ID for the reference. This is then used to build the full paths for all required reference genome files e.g. `--genome GRCh38`. \n\nSee the [nf-core website docs](https://nf-co.re/usage/reference_genomes) for more details."
+                    "format": "directory-path",
+                    "description": "Database root. Expects <db_dir>/kraken2 and <db_dir>/host.",
+                    "fa_icon": "fas fa-folder"
                 },
-                "fasta": {
+                "kraken2_db": {
                     "type": "string",
-                    "format": "file-path",
-                    "exists": true,
-                    "mimetype": "text/plain",
-                    "pattern": "^\\S+\\.fn?a(sta)?(\\.gz)?$",
-                    "description": "Path to FASTA genome file.",
-                    "help_text": "This parameter is *mandatory* if `--genome` is not specified. If you don't have a BWA index available this will be generated for you automatically. Combine with `--save_reference` to save BWA index for future runs.",
-                    "fa_icon": "far fa-file-code"
+                    "format": "directory-path",
+                    "description": "kraken2 database directory. Overrides <db_dir>/kraken2.",
+                    "fa_icon": "fas fa-folder"
                 },
-                "igenomes_ignore": {
+                "host_index": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Directory holding the host reference (.mmi or FASTA). Overrides <db_dir>/host.",
+                    "fa_icon": "fas fa-folder"
+                },
+                "db_has_decoy": {
                     "type": "boolean",
-                    "description": "Do not load the iGenomes reference config.",
-                    "fa_icon": "fas fa-ban",
-                    "hidden": true,
-                    "help_text": "Do not load `igenomes.config` when running the pipeline. You may choose this option if you observe clashes between custom parameters and those supplied in `igenomes.config`."
+                    "default": false,
+                    "description": "Declare that the kraken2 database contains non-phage decoy sequences.",
+                    "help_text": "Cannot be detected automatically, and it changes how the report has to be worded. Without decoy sequences roughly 37% of plasmid-derived sequence is called phage; with them the figure is at or below 0.4%. Raising --kraken2_confidence does not fix this, because the signal is real homology (shared integrase and relaxase modules), not stray k-mers.",
+                    "fa_icon": "fas fa-shield-alt"
+                },
+                "db_label": {
+                    "type": "string",
+                    "description": "Human-readable database name recorded in the report and manifest.",
+                    "fa_icon": "fas fa-tag"
                 }
             }
         },
-        "institutional_config_options": {
-            "title": "Institutional config options",
+        "qc_options": {
+            "title": "Long-read QC",
             "type": "object",
-            "fa_icon": "fas fa-university",
-            "description": "Parameters used to describe centralised config profiles. These should not be edited.",
-            "help_text": "The centralised nf-core configuration profiles use a handful of pipeline parameters to describe themselves. This information is then printed to the Nextflow log when you run a pipeline. You should not need to change these values when you run a pipeline.",
+            "fa_icon": "fas fa-filter",
             "properties": {
-                "custom_config_version": {
-                    "type": "string",
-                    "description": "Git commit id for Institutional configs.",
-                    "default": "master",
-                    "hidden": true,
-                    "fa_icon": "fas fa-users-cog"
+                "chopper_min_quality": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Minimum mean Phred quality per read (chopper -q).",
+                    "fa_icon": "fas fa-check"
                 },
-                "custom_config_base": {
-                    "type": "string",
-                    "description": "Base directory for Institutional configs.",
-                    "default": "https://raw.githubusercontent.com/nf-core/configs/master",
-                    "hidden": true,
-                    "help_text": "If you're running offline, Nextflow will not be able to fetch the institutional config files from the internet. If you don't need them, then this is not a problem. If you do need them, you should download the files from the repo and tell Nextflow where to find them with this parameter.",
-                    "fa_icon": "fas fa-users-cog"
+                "chopper_min_length": {
+                    "type": "integer",
+                    "default": 200,
+                    "description": "Minimum read length in bp (chopper -l).",
+                    "fa_icon": "fas fa-ruler-horizontal"
+                }
+            }
+        },
+        "host_depletion_options": {
+            "title": "Host depletion",
+            "type": "object",
+            "fa_icon": "fas fa-user-shield",
+            "description": "Two levels. Level 1 deletes the host subtree using the kraken2 pass that has already been paid for; level 2 aligns the remainder against the host reference. A kraken2 decoy only relabels reads, so level 2 is what makes the deletion complete.",
+            "properties": {
+                "skip_host_removal": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip the level-2 aligner. Level 1 still runs.",
+                    "help_text": "Leaves any host read the database does not recognise in the output. Intended for development and for databases with well-characterised host decoy content, not for data that leaves the institution.",
+                    "fa_icon": "fas fa-forward"
                 },
-                "config_profile_name": {
-                    "type": "string",
-                    "description": "Institutional config name.",
-                    "hidden": true,
-                    "fa_icon": "fas fa-users-cog"
+                "host_taxid": {
+                    "type": "integer",
+                    "default": 9606,
+                    "description": "Root of the host subtree to delete at level 1.",
+                    "fa_icon": "fas fa-dna"
                 },
-                "config_profile_description": {
-                    "type": "string",
-                    "description": "Institutional config description.",
-                    "hidden": true,
-                    "fa_icon": "fas fa-users-cog"
+                "viral_taxid": {
+                    "type": "integer",
+                    "default": 10239,
+                    "description": "Root of the viral subtree counted as evidence.",
+                    "fa_icon": "fas fa-virus"
                 },
-                "config_profile_contact": {
+                "l2_input": {
                     "type": "string",
-                    "description": "Institutional config contact information.",
-                    "hidden": true,
-                    "fa_icon": "fas fa-users-cog"
+                    "default": "all_nonhuman",
+                    "enum": ["all_nonhuman", "nonhuman_nonviral"],
+                    "description": "Which reads the level-2 aligner sees.",
+                    "help_text": "`all_nonhuman` (default) sends every read outside the host subtree to the aligner, so a human read misclassified as viral is still caught. `nonhuman_nonviral` withholds viral-classified reads: marginally faster, but it opens exactly that gap.",
+                    "fa_icon": "fas fa-code-branch"
                 },
-                "config_profile_url": {
+                "minimap2_preset": {
                     "type": "string",
-                    "description": "Institutional config URL link.",
-                    "hidden": true,
-                    "fa_icon": "fas fa-users-cog"
+                    "default": "map-ont",
+                    "description": "minimap2 preset for level-2 alignment.",
+                    "help_text": "Must match the preset the .mmi index was built with; minimap2 silently honours the index's parameters over the command line.",
+                    "fa_icon": "fas fa-sliders-h"
+                }
+            }
+        },
+        "classification_options": {
+            "title": "Classification and abundance",
+            "type": "object",
+            "fa_icon": "fas fa-sitemap",
+            "properties": {
+                "kraken2_confidence": {
+                    "type": "number",
+                    "default": 0.02,
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "kraken2 --confidence. Leave at 0.02 for ONT.",
+                    "help_text": "0.02, not kraken2's default of 0. Against a phage reference database the default calls a taxon on a single k-mer hit, which made 61% of human and 38% of clean bacterial contigs look like phage in the benchmark this pipeline derives from. Do NOT raise it: short-read intuition does not transfer to ONT. Going from 0.02 to 0.10 costs only ~3.5 points of recall on 150 bp reads at 0.1% error, but 15 points at 95% read identity (typical R10.4 simplex) and 29 points at 87% identity, because each ONT read carries far fewer exactly-matching k-mers to vote with. Raising it also does not remove plasmid and ICE false positives, which come from real shared modules rather than stray k-mers.",
+                    "fa_icon": "fas fa-percent"
+                },
+                "skip_bracken": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Skip bracken abundance re-estimation.",
+                    "help_text": "Bracken is skipped automatically, with a warning, when the database has no database<N>mers.kmer_distrib files. Note that bracken's model assumes a fixed read length, which fits ONT data poorly.",
+                    "fa_icon": "fas fa-forward"
+                },
+                "bracken_read_length": {
+                    "type": "integer",
+                    "default": 150,
+                    "description": "Read length whose k-mer distribution bracken should use.",
+                    "fa_icon": "fas fa-ruler"
+                },
+                "bracken_level": {
+                    "type": "string",
+                    "default": "S",
+                    "enum": ["D", "P", "C", "O", "F", "G", "S"],
+                    "description": "Taxonomic rank for bracken re-estimation.",
+                    "fa_icon": "fas fa-layer-group"
+                },
+                "bracken_threshold": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Minimum reads for bracken to re-estimate a taxon.",
+                    "fa_icon": "fas fa-greater-than-equal"
+                }
+            }
+        },
+        "reporting_options": {
+            "title": "Reporting thresholds",
+            "type": "object",
+            "fa_icon": "fas fa-file-medical-alt",
+            "description": "v0.1 reports read-level evidence only, so every positive is a candidate. These thresholds decide how a candidate is graded, not whether it is confirmed.",
+            "properties": {
+                "min_reads": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Minimum reads for a taxon to be graded above `below_threshold`.",
+                    "fa_icon": "fas fa-greater-than-equal"
+                },
+                "min_rpm": {
+                    "type": "number",
+                    "default": 1.0,
+                    "description": "Minimum reads per million non-host reads for `candidate_high_abundance`.",
+                    "help_text": "The denominator is non-host reads, not total reads: in plasma and CSF the human fraction dominates, and normalising by total reads would make the same organism look far rarer in a sample that simply had more host background.",
+                    "fa_icon": "fas fa-percent"
                 }
             }
         },
         "max_job_request_options": {
-            "title": "Max job request options",
+            "title": "Maximum job request options",
             "type": "object",
             "fa_icon": "fab fa-acquisitions-incorporated",
-            "description": "Set the top limit for requested resources for any single job.",
-            "help_text": "If you are running on a smaller system, a pipeline step requesting more resources than are available may cause the Nextflow to stop the run with an error. These options allow you to cap the maximum resources requested by any single job so that the pipeline will run on your system.\n\nNote that you can not _increase_ the resources requested by any job using these options. For that you will need your own configuration file. See [the nf-core website](https://nf-co.re/usage/configuration) for details.",
             "properties": {
                 "max_cpus": {
                     "type": "integer",
-                    "description": "Maximum number of CPUs that can be requested for any single job.",
                     "default": 16,
-                    "fa_icon": "fas fa-microchip",
-                    "hidden": true,
-                    "help_text": "Use to set an upper-limit for the CPU requirement for each process. Should be an integer e.g. `--max_cpus 1`"
+                    "description": "Maximum CPUs any single task may request.",
+                    "fa_icon": "fas fa-microchip"
                 },
                 "max_memory": {
                     "type": "string",
-                    "description": "Maximum amount of memory that can be requested for any single job.",
                     "default": "128.GB",
-                    "fa_icon": "fas fa-memory",
                     "pattern": "^\\d+(\\.\\d+)?\\.?\\s*(K|M|G|T)?B$",
-                    "hidden": true,
-                    "help_text": "Use to set an upper-limit for the memory requirement for each process. Should be a string in the format integer-unit e.g. `--max_memory '8.GB'`"
+                    "description": "Maximum memory any single task may request.",
+                    "help_text": "kraken2 loads the whole database into RAM, so this must exceed the database size. The 11 GB production database peaks around 12 GB.",
+                    "fa_icon": "fas fa-memory"
                 },
                 "max_time": {
                     "type": "string",
-                    "description": "Maximum amount of time that can be requested for any single job.",
                     "default": "240.h",
-                    "fa_icon": "far fa-clock",
                     "pattern": "^(\\d+\\.?\\s*(s|m|h|d|day)\\s*)+$",
-                    "hidden": true,
-                    "help_text": "Use to set an upper-limit for the time requirement for each process. Should be a string in the format integer-unit e.g. `--max_time '2.h'`"
+                    "description": "Maximum time any single task may request.",
+                    "fa_icon": "far fa-clock"
                 }
             }
         },
@@ -161,8 +230,6 @@
             "title": "Generic options",
             "type": "object",
             "fa_icon": "fas fa-file-import",
-            "description": "Less common options for the pipeline, typically set in a config file.",
-            "help_text": "These options are common to all nf-core pipelines and allow you to customise some of the core preferences for how the pipeline runs.\n\nTypically these options would be set in a Nextflow config file loaded for all pipeline runs, such as `~/.nextflow/config`.",
             "properties": {
                 "help": {
                     "type": "boolean",
@@ -176,121 +243,48 @@
                     "fa_icon": "fas fa-question-circle",
                     "hidden": true
                 },
-                "publish_dir_mode": {
-                    "type": "string",
-                    "default": "copy",
-                    "description": "Method used to save pipeline results to output directory.",
-                    "help_text": "The Nextflow `publishDir` option specifies which intermediate files should be saved to the output directory. This option tells the pipeline what method should be used to move these files. See [Nextflow docs](https://www.nextflow.io/docs/latest/process.html#publishdir) for details.",
-                    "fa_icon": "fas fa-copy",
-                    "enum": ["symlink", "rellink", "link", "copy", "copyNoFollow", "move"],
-                    "hidden": true
-                },
-                "email_on_fail": {
-                    "type": "string",
-                    "description": "Email address for completion summary, only when pipeline fails.",
-                    "fa_icon": "fas fa-exclamation-triangle",
-                    "pattern": "^([a-zA-Z0-9_\\-\\.]+)@([a-zA-Z0-9_\\-\\.]+)\\.([a-zA-Z]{2,5})$",
-                    "help_text": "An email address to send a summary email to when the pipeline is completed - ONLY sent if the pipeline does not exit successfully.",
-                    "hidden": true
-                },
-                "plaintext_email": {
-                    "type": "boolean",
-                    "description": "Send plain-text email instead of HTML.",
-                    "fa_icon": "fas fa-remove-format",
-                    "hidden": true
-                },
-                "max_multiqc_email_size": {
-                    "type": "string",
-                    "description": "File size limit when attaching MultiQC reports to summary emails.",
-                    "pattern": "^\\d+(\\.\\d+)?\\.?\\s*(K|M|G|T)?B$",
-                    "default": "25.MB",
-                    "fa_icon": "fas fa-file-upload",
-                    "hidden": true
-                },
                 "monochrome_logs": {
                     "type": "boolean",
-                    "description": "Do not use coloured log outputs.",
+                    "description": "Do not use colour in the log output.",
                     "fa_icon": "fas fa-palette",
                     "hidden": true
                 },
-                "hook_url": {
-                    "type": "string",
-                    "description": "Incoming hook URL for messaging service",
-                    "fa_icon": "fas fa-people-group",
-                    "help_text": "Incoming hook URL for messaging service. Currently, MS Teams and Slack are supported.",
-                    "hidden": true
-                },
-                "multiqc_config": {
-                    "type": "string",
-                    "format": "file-path",
-                    "description": "Custom config file to supply to MultiQC.",
-                    "fa_icon": "fas fa-cog",
-                    "hidden": true
-                },
-                "multiqc_logo": {
-                    "type": "string",
-                    "description": "Custom logo file to supply to MultiQC. File name must also be set in the MultiQC config file",
-                    "fa_icon": "fas fa-image",
-                    "hidden": true
-                },
-                "multiqc_methods_description": {
-                    "type": "string",
-                    "description": "Custom MultiQC yaml file containing HTML including a methods description.",
-                    "fa_icon": "fas fa-cog"
-                },
                 "validate_params": {
                     "type": "boolean",
-                    "description": "Boolean whether to validate parameters against the schema at runtime",
                     "default": true,
+                    "description": "Validate parameters against this schema at startup.",
                     "fa_icon": "fas fa-check-square",
+                    "hidden": true
+                },
+                "validationFailUnrecognisedParams": {
+                    "type": "boolean",
+                    "description": "Fail when an unrecognised parameter is given.",
+                    "fa_icon": "far fa-check-circle",
+                    "hidden": true
+                },
+                "validationLenientMode": {
+                    "type": "boolean",
+                    "description": "Validate parameters in JSON Schema lenient mode.",
+                    "fa_icon": "far fa-check-circle",
                     "hidden": true
                 },
                 "validationShowHiddenParams": {
                     "type": "boolean",
+                    "description": "Show hidden parameters in --help.",
                     "fa_icon": "far fa-eye-slash",
-                    "description": "Show all params when using `--help`",
-                    "hidden": true,
-                    "help_text": "By default, parameters set as _hidden_ in the schema are not shown on the command line when a user runs with `--help`. Specifying this option will tell the pipeline to show all parameters."
-                },
-                "validationFailUnrecognisedParams": {
-                    "type": "boolean",
-                    "fa_icon": "far fa-check-circle",
-                    "description": "Validation of parameters fails when an unrecognised parameter is found.",
-                    "hidden": true,
-                    "help_text": "By default, when an unrecognised parameter is found, it returns a warinig."
-                },
-                "validationLenientMode": {
-                    "type": "boolean",
-                    "fa_icon": "far fa-check-circle",
-                    "description": "Validation of parameters in lenient more.",
-                    "hidden": true,
-                    "help_text": "Allows string values that are parseable as numbers or booleans. For further information see [JSONSchema docs](https://github.com/everit-org/json-schema#lenient-mode)."
-                },
-                "pipelines_testdata_base_path": {
-                    "type": "string",
-                    "fa_icon": "far fa-check-circle",
-                    "description": "Base URL or local path to location of pipeline test dataset files",
-                    "default": "https://raw.githubusercontent.com/nf-core/test-datasets/",
                     "hidden": true
                 }
             }
         }
     },
     "allOf": [
-        {
-            "$ref": "#/definitions/input_output_options"
-        },
-        {
-            "$ref": "#/definitions/reference_genome_options"
-        },
-        {
-            "$ref": "#/definitions/institutional_config_options"
-        },
-        {
-            "$ref": "#/definitions/max_job_request_options"
-        },
-        {
-            "$ref": "#/definitions/generic_options"
-        }
+        { "$ref": "#/definitions/input_output_options" },
+        { "$ref": "#/definitions/database_options" },
+        { "$ref": "#/definitions/qc_options" },
+        { "$ref": "#/definitions/host_depletion_options" },
+        { "$ref": "#/definitions/classification_options" },
+        { "$ref": "#/definitions/reporting_options" },
+        { "$ref": "#/definitions/max_job_request_options" },
+        { "$ref": "#/definitions/generic_options" }
     ]
 }

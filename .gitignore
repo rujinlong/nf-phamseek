@@ -6,3 +6,21 @@ results/
 testing/
 testing*
 *.pyc
+
+# --- pixi -------------------------------------------------------------------
+# The environment itself is a build artefact (~5 GB); pixi.lock is the source of
+# truth and IS committed.
+.pixi/
+
+# --- deployment artefacts ---------------------------------------------------
+# Offline bundles, packed environments, container images and database archives
+# are all multi-GB build outputs. They are shipped out of band, never via git.
+dist/
+deploy/dist/
+*.sif
+*.img
+*.tar.zst
+*.tar.zst.part*
+*.tar.gz
+phamseek-env.sh
+preflight.json

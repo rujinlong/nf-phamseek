@@ -1,91 +1,174 @@
-[![GitHub Actions CI Status](https://github.com/rujinlong/phamseek/actions/workflows/ci.yml/badge.svg)](https://github.com/rujinlong/phamseek/actions/workflows/ci.yml)
-[![GitHub Actions Linting Status](https://github.com/rujinlong/phamseek/actions/workflows/linting.yml/badge.svg)](https://github.com/rujinlong/phamseek/actions/workflows/linting.yml)[![Cite with Zenodo](http://img.shields.io/badge/DOI-10.5281/zenodo.XXXXXXX-1073c8?labelColor=000000)](https://doi.org/10.5281/zenodo.XXXXXXX)
-[![nf-test](https://img.shields.io/badge/unit_tests-nf--test-337ab7.svg)](https://www.nf-test.com)
+# phamseek
 
-[![Nextflow](https://img.shields.io/badge/nextflow%20DSL2-%E2%89%A523.04.0-23aa62.svg)](https://www.nextflow.io/)
-[![run with conda](http://img.shields.io/badge/run%20with-conda-3EB049?labelColor=000000&logo=anaconda)](https://docs.conda.io/en/latest/)
-[![run with docker](https://img.shields.io/badge/run%20with-docker-0db7ed?labelColor=000000&logo=docker)](https://www.docker.com/)
-[![run with singularity](https://img.shields.io/badge/run%20with-singularity-1d355c.svg?labelColor=000000)](https://sylabs.io/docs/)
-[![Launch on Seqera Platform](https://img.shields.io/badge/Launch%20%F0%9F%9A%80-Seqera%20Platform-%234256e7)](https://cloud.seqera.io/launch?pipeline=https://github.com/rujinlong/phamseek)
+Phage detection in low-biomass clinical Oxford Nanopore metagenomes.
 
-## Introduction
+phamseek takes basecalled ONT reads from plasma or CSF, removes human sequence in two
+independent passes, classifies what remains against a phage reference database, and
+produces one HTML report and one TSV per run.
 
-**rujinlong/phamseek** is a bioinformatics pipeline that ...
+> **NOT FOR CLINICAL DIAGNOSIS.** v0.1 reports read-level k-mer evidence only. Every
+> positive is a *candidate* that needs orthogonal confirmation.
 
-<!-- TODO nf-core:
-   Complete this sentence with a 2-3 sentence summary of what types of data the pipeline ingests, a brief overview of the
-   major pipeline sections and the types of output it produces. You're giving an overview to someone new
-   to nf-core here, in 15-20 seconds. For an example, see https://github.com/nf-core/rnaseq/blob/master/README.md#introduction
--->
+---
 
-<!-- TODO nf-core: Include a figure that guides the user through the major workflow steps. Many nf-core
-     workflows use the "tube map" design for that. See https://nf-co.re/docs/contributing/design_guidelines#examples for examples.   -->
-<!-- TODO nf-core: Fill in short bullet-pointed list of the default steps in the pipeline -->
-
-1. Read QC ([`FastQC`](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/))
-2. Present QC for raw reads ([`MultiQC`](http://multiqc.info/))
-
-## Usage
-
-> [!NOTE]
-> If you are new to Nextflow and nf-core, please refer to [this page](https://nf-co.re/docs/usage/installation) on how to set-up Nextflow. Make sure to [test your setup](https://nf-co.re/docs/usage/introduction#how-to-run-a-pipeline) with `-profile test` before running the workflow on actual data.
-
-<!-- TODO nf-core: Describe the minimum required steps to execute the pipeline, e.g. how to prepare samplesheets.
-     Explain what rows and columns represent. For instance (please edit as appropriate):
-
-First, prepare a samplesheet with your input data that looks as follows:
-
-`samplesheet.csv`:
-
-```csv
-sample,fastq_1,fastq_2
-CONTROL_REP1,AEG588A1_S1_L002_R1_001.fastq.gz,AEG588A1_S1_L002_R2_001.fastq.gz
-```
-
-Each row represents a fastq file (single-end) or a pair of fastq files (paired end).
-
--->
-
-Now, you can run the pipeline using:
-
-<!-- TODO nf-core: update the following command to include all required parameters for a minimal example -->
+## Quick start
 
 ```bash
-nextflow run rujinlong/phamseek \
-   -profile <docker/singularity/.../institute> \
-   --input samplesheet.csv \
-   --outdir <OUTDIR>
+bin/phamseek install                       # one-time, no root needed
+bin/phamseek doctor                        # verify tools and databases
+
+bin/phamseek run \
+    --input samplesheet.csv \
+    --db_dir /path/to/phamseek_db \
+    --outdir results
 ```
 
-> [!WARNING]
-> Please provide pipeline parameters via the CLI or Nextflow `-params-file` option. Custom config files including those provided by the `-c` Nextflow option can be used to provide any configuration _**except for parameters**_;
-> see [docs](https://nf-co.re/usage/configuration#custom-configuration-files).
+The report lands at `results/summary/phamseek_report.html`. Full option list:
+`bin/phamseek run --help`.
 
-## Credits
+You do not need to know that phamseek is a Nextflow pipeline underneath, and you should
+not need to invoke `nextflow` yourself.
 
-rujinlong/phamseek was originally written by Jinlong Ru.
+### Samplesheet
 
-We thank the following people for their extensive assistance in the development of this pipeline:
+```csv
+sample_id,fastq,platform,sample_type
+plasma_01,reads/plasma_01.fastq.gz,ont,sample
+csf_02,reads/csf_02.fastq.gz,ont,sample
+ntc_01,reads/ntc_01.fastq.gz,ont,ntc
+```
 
-<!-- TODO nf-core: If applicable, make list of people who have also contributed -->
+`fastq` paths may be absolute, or relative to the samplesheet's own directory.
+`platform` and `sample_type` are optional (defaults `ont` and `sample`).
 
-## Contributions and Support
+**Include a no-template control whenever you can.** These are low-biomass libraries, where
+reagent contamination is a leading cause of low-abundance calls. Given an `ntc` row,
+phamseek flags every taxon that also appears in the control and downgrades its call.
+It does not subtract control counts — see [docs/output.md](docs/output.md).
 
-If you would like to contribute to this pipeline, please see the [contributing guidelines](.github/CONTRIBUTING.md).
+---
 
-## Citations
+## What it does
 
-<!-- TODO nf-core: Add citation for pipeline after first release. Uncomment lines below and update Zenodo doi and badge at the top of this file. -->
-<!-- If you use rujinlong/phamseek for your analysis, please cite it using the following doi: [10.5281/zenodo.XXXXXX](https://doi.org/10.5281/zenodo.XXXXXX) -->
+```mermaid
+flowchart TD
+    A[ONT reads] --> B[chopper + nanoq<br/>length / quality filter]
+    B --> C[kraken2<br/>one pass over every read]
+    C --> D{taxonomic assignment}
+    D -->|Homo sapiens subtree| E[deleted<br/>level 1 host depletion]
+    D -->|Viruses subtree| F[phage evidence]
+    D -->|everything else<br/>+ unclassified| G[minimap2 vs CHM13<br/>level 2 host depletion]
+    F --> G
+    G --> H[host-free reads]
+    C --> I[bracken<br/>optional]
+    F --> J[per-sample report]
+    I --> J
+    E --> J
+    G --> J
+    J --> K[phamseek_report.html<br/>phamseek_summary.tsv]
+```
 
-<!-- TODO nf-core: Add bibliography of tools and data used in your pipeline -->
+**kraken2 runs before host depletion on purpose.** One pass classifies every read, and
+that single pass yields both the taxonomic profile and a free first pass of host removal:
+where the database carries human decoy sequences, roughly 99.6% of human reads land in
+taxid 9606 in under a second, leaving the aligner a fraction of the work.
 
-An extensive list of references for the tools used by the pipeline can be found in the [`CITATIONS.md`](CITATIONS.md) file.
+**Two levels, because one is not enough.** A kraken2 decoy only changes a read's *label*;
+it does not delete anything. Reads the database fails to recognize would still reach the
+published output. Level 2 aligns everything level 1 kept against T2T-CHM13v2 and keeps
+only reads with no alignment at all, so a read touching the host reference is deleted
+rather than relabeled. Both levels write their removal counts into the report.
 
-This pipeline uses code and infrastructure developed and maintained by the [nf-core](https://nf-co.re) community, reused here under the [MIT license](https://github.com/nf-core/tools/blob/master/LICENSE).
+The two levels are genuinely redundant, and that is verifiable: with a decoy database,
+level 1 removes 100% of host reads and level 2 finds nothing left; with a non-decoy
+database, level 1 removes 0% and level 2 removes 100%. Both routes land on the same
+answer.
 
-> **The nf-core framework for community-curated bioinformatics pipelines.**
->
-> Philip Ewels, Alexander Peltzer, Sven Fillinger, Harshil Patel, Johannes Alneberg, Andreas Wilm, Maxime Ulysse Garcia, Paolo Di Tommaso & Sven Nahnsen.
->
-> _Nat Biotechnol._ 2020 Feb 13. doi: [10.1038/s41587-020-0439-x](https://dx.doi.org/10.1038/s41587-020-0439-x).
+---
+
+## What it deliberately does not do
+
+| Not in v0.1 | Why |
+|---|---|
+| Assembly, geNomad, CheckV (`--mode full`) | Target samples are low-biomass plasma and CSF where coverage rarely supports assembly. The validated route is kraken2 lead detection followed by targeted mapping. `--mode full` fails with an explanation rather than running a partial path. |
+| Illumina / paired-end input | The QC step, the minimap2 preset, and the single-end kraken2 call are all long-read specific. Illumina data would produce numbers that look valid and are not. |
+| Chimeric read splitting | ONT cDNA libraries produce concatemers. v0.1 *measures* the resulting signal and reports it; it does not split reads. |
+| NTC subtraction | Choosing a subtraction rule needs replicate controls this pilot does not have. phamseek flags instead. |
+| Limit-of-detection calibration | Needs a dilution series on the real assay. |
+
+---
+
+## Reference databases
+
+Databases are always external to this repository and are never copied into the work
+directory. `--db_dir` expects:
+
+```
+<db_dir>/kraken2/    kraken2 database (hash.k2d, opts.k2d, taxo.k2d)
+<db_dir>/host/       host reference for level 2 (.mmi, or FASTA)
+```
+
+Choosing the kraken2 database is the single most consequential decision, and it is a
+question of **coverage of the target niche**, not of size or speed. Classification time
+differs by only ~14% between a 0.9 GB and an 11 GB database, while detection of novel
+sequence differs by a factor of 65. The only real constraint is RAM, which must exceed
+the database size — kraken2 loads it whole.
+
+A database built with non-phage **decoy** sequences (bacteria, plasmid, human) is strongly
+preferred. It suppresses plasmid false positives from 37.4% to at or below 0.4%, and it is
+what makes level-1 host depletion work. Declare it with `--db_has_decoy` so the report
+words its caveats correctly.
+
+The `.mmi` host index must be built with the same minimap2 preset used at mapping time
+(`map-ont`); minimap2 silently honors the index's parameters over the command line.
+
+---
+
+## Interpreting the results
+
+Read [docs/output.md](docs/output.md) before reading a report. The four boundary conditions
+that most often get lost:
+
+- **A negative result does not exclude a phage.** Recall depends on the reference database
+  containing a close (>=80% ANI) neighbor: ~96% when one exists, ~50% when none does.
+- **Plasmids and ICE/IME are the dominant false-positive source**, and raising
+  `--kraken2_confidence` does not fix it. The signal is real shared homology (integrase,
+  relaxase modules), not stray k-mers. Decoy sequences in the database are the fix.
+- **RPM is normalized to non-host reads**, which is right for human-dominated samples but
+  inflates without bound when few non-host reads remain. Always read RPM next to
+  `nonhost_denominator`.
+- **Read counts are not independent molecules.** These libraries are pre-amplified.
+
+The methodological basis is a benchmark of kraken2-based in-silico phage detection; the
+figures above come from it.
+
+---
+
+## Documentation
+
+- [docs/usage.md](docs/usage.md) — every option, samplesheet rules, worked examples
+- [docs/output.md](docs/output.md) — output layout, every column, how to read a call
+- [deploy/INSTALL.md](deploy/INSTALL.md) — installation, including offline hosts
+
+## Requirements
+
+- Linux, x86-64 or arm64
+- [pixi](https://pixi.sh) (a single static binary; no root, and it does not touch an
+  existing conda installation)
+- RAM greater than the kraken2 database size (~12 GB for the 11 GB database)
+- No network access at run time, once the environment and the Nextflow plugins are cached
+
+## Development
+
+```bash
+nextflow run . -profile test,no_pixi -stub --outdir /tmp/phamseek_stub   # wiring only
+nextflow run . -profile test --db_dir <db> --outdir /tmp/phamseek_test   # tiny real run
+```
+
+`test/` ships ~1.2 MB of simulated ONT reads. They come from a deliberately simplified
+simulator ([test/make_test_data.py](test/make_test_data.py)) and exercise wiring and
+detection of a near-neighbor phage. They are not a performance benchmark.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

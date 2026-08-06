@@ -1,0 +1,4 @@
+sample_id,fastq,platform,sample_type
+plasma_pos,reads/plasma_pos.fastq.gz,ont,sample
+plasma_neg,reads/plasma_neg.fastq.gz,ont,sample
+ntc_blank,reads/ntc_blank.fastq.gz,ont,ntc

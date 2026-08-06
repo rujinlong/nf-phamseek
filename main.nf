@@ -3,95 +3,41 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     rujinlong/phamseek
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Github : https://github.com/rujinlong/phamseek
+    Phage detection in low-biomass clinical Oxford Nanopore metagenomes.
+
+    Users are not expected to invoke this directly — `bin/phamseek run` is the
+    supported entry point. Github: https://github.com/rujinlong/phamseek
 ----------------------------------------------------------------------------------------
 */
 
 nextflow.enable.dsl = 2
 
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    IMPORT FUNCTIONS / MODULES / SUBWORKFLOWS / WORKFLOWS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-include { PHAMSEEK  } from './workflows/phamseek'
-include { PIPELINE_INITIALISATION } from './subworkflows/local/utils_nfcore_phamseek_pipeline'
-include { PIPELINE_COMPLETION     } from './subworkflows/local/utils_nfcore_phamseek_pipeline'
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    NAMED WORKFLOWS FOR PIPELINE
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-//
-// WORKFLOW: Run main analysis pipeline depending on type of input
-//
-workflow PHAMSEEK_MAIN {
-
-    take:
-    samplesheet // channel: samplesheet read in from --input
-
-    main:
-
-    //
-    // WORKFLOW: Run pipeline
-    //
-    PHAMSEEK (
-        samplesheet
-    )
-
-    emit:
-    multiqc_report = PHAMSEEK.out.multiqc_report // channel: /path/to/multiqc_report.html
-
-}
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    RUN MAIN WORKFLOW
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
+// INV-NF-01: includes only at file top level.
+include { PHAMSEEK                } from './workflows/phamseek'
+include { PIPELINE_INITIALISATION } from './subworkflows/local/utils_phamseek_pipeline'
+include { PIPELINE_COMPLETION     } from './subworkflows/local/utils_phamseek_pipeline'
 
 workflow {
 
     main:
 
-    //
-    // SUBWORKFLOW: Run initialisation tasks
-    //
     PIPELINE_INITIALISATION (
         params.version,
         params.help,
         params.validate_params,
         params.monochrome_logs,
-        args,
         params.outdir,
         params.input
     )
 
-    //
-    // WORKFLOW: Run main workflow
-    //
-    PHAMSEEK_MAIN (
-        PIPELINE_INITIALISATION.out.samplesheet
+    PHAMSEEK (
+        PIPELINE_INITIALISATION.out.samplesheet,
+        PIPELINE_INITIALISATION.out.kraken2_db,
+        PIPELINE_INITIALISATION.out.host_index
     )
 
-    //
-    // SUBWORKFLOW: Run completion tasks
-    //
     PIPELINE_COMPLETION (
-        params.email,
-        params.email_on_fail,
-        params.plaintext_email,
         params.outdir,
-        params.monochrome_logs,
-        params.hook_url,
-        PHAMSEEK_MAIN.out.multiqc_report
+        params.monochrome_logs
     )
 }
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    THE END
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
