@@ -130,6 +130,99 @@ def read_json(path: Path):
         return {}
 
 
+def read_manifest(path: Path) -> dict:
+    """Parse the two-column database manifest into a dict."""
+    out = {}
+    if path is None or not Path(path).exists():
+        return out
+    with open(path) as fh:
+        for line in fh:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) == 2:
+                out[parts[0]] = parts[1]
+    return out
+
+
+DECOY_CLASSES = ("human", "bacterial", "plasmid")
+
+
+def resolve_decoy(declared: str, manifest: dict) -> dict:
+    """Reconcile the operator's declaration with the database's own taxonomy.
+
+    Three states per class rather than one boolean for the lot, because the
+    three are not equally knowable: human and bacterial decoys sit on stable
+    taxids, while "plasmid" has no universal node and is matched on taxid 45202
+    or a node named plasmid*. Collapsing them into one flag would force a guess
+    about a class we cannot see.
+
+    A declaration always wins over detection -- the operator may know something
+    the taxonomy does not show -- but a contradiction is recorded rather than
+    silently resolved. Reporting a confident caveat from a false premise is
+    worse than reporting no caveat.
+    """
+    declared = (declared or "auto").strip().lower()
+    method = manifest.get("decoy_detection_method", "unavailable")
+
+    detected = {}
+    for cls in DECOY_CLASSES:
+        detected[cls] = {
+            "state": manifest.get(f"decoy_{cls}", "unknown"),
+            "pct_of_minimizers": manifest.get(f"decoy_{cls}_pct", "NA"),
+        }
+
+    classes = {}
+    for cls in DECOY_CLASSES:
+        if declared == "true":
+            classes[cls] = dict(detected[cls], effective="present_declared")
+        elif declared == "false":
+            classes[cls] = dict(detected[cls], effective="absent_declared")
+        else:
+            state = detected[cls]["state"]
+            classes[cls] = dict(
+                detected[cls],
+                effective={
+                    "detected": "present_detected",
+                    "absent": "absent_detected",
+                }.get(state, "unknown"),
+            )
+
+    def present(cls):
+        eff = classes[cls]["effective"]
+        if eff.startswith("present"):
+            return True
+        if eff.startswith("absent"):
+            return False
+        return None
+
+    any_detected = [c for c in DECOY_CLASSES if detected[c]["state"] == "detected"]
+
+    inconsistency = None
+    if declared == "false" and any_detected:
+        inconsistency = (
+            "This run declared --db_has_decoy false, but the database's own taxonomy "
+            "contains " + ", ".join(any_detected) + " decoy sequences. The caveats "
+            "below follow the declaration; if the declaration is wrong, they are wrong. "
+            "Re-run with --db_has_decoy auto to use what the database actually contains."
+        )
+    elif declared == "true" and method != "unavailable" and not any_detected:
+        inconsistency = (
+            "This run declared --db_has_decoy true, but no human, bacterial or plasmid "
+            "decoy node was found in the database's taxonomy. Either the declaration is "
+            "wrong, or the decoy sequences were added under taxids this check does not "
+            "recognise."
+        )
+
+    return {
+        "declared": declared,
+        "detection_method": method,
+        "classes": classes,
+        "plasmid_decoy_present": present("plasmid"),
+        "human_decoy_present": present("human"),
+        "bacterial_decoy_present": present("bacterial"),
+        "inconsistency": inconsistency,
+    }
+
+
 def load_bracken(path: Path):
     """taxid -> (est_reads, fraction). Empty when bracken did not run."""
     out = {}
@@ -179,11 +272,15 @@ def main() -> None:
     ap.add_argument("--min-reads", type=int, default=10)
     ap.add_argument("--min-rpm", type=float, default=1.0)
     ap.add_argument("--db-label", default="")
-    ap.add_argument("--db-has-decoy", default="false")
+    ap.add_argument("--db-has-decoy", default="auto")
+    ap.add_argument("--db-manifest", type=Path)
     ap.add_argument("--kraken-confidence", default="")
     args = ap.parse_args()
 
-    db_has_decoy = str(args.db_has_decoy).lower() in ("true", "1", "yes")
+    decoy = resolve_decoy(args.db_has_decoy, read_manifest(args.db_manifest))
+    # Only the plasmid class drives the false-positive caveat: that is the
+    # class the 37.4% -> <=0.4% benchmark result is about.
+    plasmid_decoy = decoy['plasmid_decoy_present']
 
     rows, total_reads, unclassified = parse_kraken_report(args.kraken_report)
     host_clade = clade_reads_for(rows, 9606)
@@ -236,8 +333,11 @@ def main() -> None:
             call = "candidate_low_abundance"
 
         flags = []
-        if not db_has_decoy:
+        if plasmid_decoy is False:
             flags.append("plasmid_mge_ambiguity_risk")
+        elif plasmid_decoy is None:
+            # Not the same as knowing there is none, and not the same as safe.
+            flags.append("plasmid_decoy_unverified")
         if not r["is_leaf"]:
             flags.append("lca_stopped_above_most_specific_rank")
         if args.sample_type == "ntc":
@@ -299,8 +399,8 @@ def main() -> None:
         "not_for_clinical_diagnosis": True,
         "database": {
             "label": args.db_label,
-            "has_decoy": db_has_decoy,
             "kraken2_confidence": args.kraken_confidence,
+            "decoy": decoy,
         },
         "thresholds": {"min_reads": args.min_reads, "min_rpm": args.min_rpm},
         "qc": {
@@ -356,13 +456,22 @@ def main() -> None:
             "NOT FOR CLINICAL DIAGNOSIS.",
         ],
     }
-    if not db_has_decoy:
+    if decoy["inconsistency"]:
+        payload["caveats"].insert(0, decoy["inconsistency"])
+    if plasmid_decoy is False:
         payload["caveats"].insert(
             0,
-            "This kraken2 database was declared to contain no decoy sequences "
-            "(--db_has_decoy false), so the plasmid/MGE false-positive rate is "
-            "the high one: expect ~37% of plasmid-derived sequence to be called "
-            "phage.",
+            "This kraken2 database has no plasmid decoy sequences, so the "
+            "plasmid/MGE false-positive rate is the high one: expect roughly 37% "
+            "of plasmid-derived sequence to be called phage.",
+        )
+    elif plasmid_decoy is None:
+        payload["caveats"].insert(
+            0,
+            "Plasmid decoy content of this database could not be determined "
+            f"(detection: {decoy['detection_method']}). The plasmid/MGE "
+            "false-positive rate is therefore unknown, somewhere between ~37% "
+            "without decoy sequences and <=0.4% with them.",
         )
 
     args.out_json.parent.mkdir(parents=True, exist_ok=True)

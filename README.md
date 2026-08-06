@@ -116,8 +116,18 @@ the database size — kraken2 loads it whole.
 
 A database built with non-phage **decoy** sequences (bacteria, plasmid, human) is strongly
 preferred. It suppresses plasmid false positives from 37.4% to at or below 0.4%, and it is
-what makes level-1 host depletion work. Declare it with `--db_has_decoy` so the report
-words its caveats correctly.
+what makes level-1 host depletion work.
+
+You do not have to declare this. `--db_has_decoy auto` (the default) reads the database's
+own taxonomy with `kraken2-inspect` and reports the human, bacterial and plasmid decoy
+classes separately, so the report's false-positive caveat follows what the database
+actually contains. Pass `true` or `false` to override; if an override contradicts the
+database, the report says so rather than reasoning from the wrong premise.
+
+> Detection reads the **database**, never a sample's kraken2 report. A report lists only
+> taxa that received reads, so a decoy database analysing a sample with no human reads
+> shows no human node at all — inferring database content from it would mislabel exactly
+> the samples where host depletion worked.
 
 The `.mmi` host index must be built with the same minimap2 preset used at mapping time
 (`map-ont`); minimap2 silently honors the index's parameters over the command line.
@@ -139,8 +149,25 @@ that most often get lost:
   `nonhost_denominator`.
 - **Read counts are not independent molecules.** These libraries are pre-amplified.
 
-The methodological basis is a benchmark of kraken2-based in-silico phage detection; the
-figures above come from it.
+### Why `--kraken2_confidence` defaults to 0.02
+
+![kraken2 on simulated ONT cDNA reads](docs/images/ont_pilot.png)
+
+*Left: on ONT reads, raising confidence from 0.02 to 0.10 costs 15 points at 95% read
+identity and 29 points at 87% — against only 3.5 points on 150 bp Illumina reads. The
+short-read habit of tightening this threshold does not transfer. Right: cross-domain
+chimeras are split according to whichever fragment carries more k-mers, so only 0.70%
+reach root even at a 30% chimera rate — which is why the chimera diagnostic in the report
+is labeled as a non-specific signal rather than a chimera rate.*
+
+Note that same-domain chimeras are classified *better* than pure reads (92.7% vs 79.3%),
+because they are longer. The overall "percent viral" therefore barely moves while its
+composition shifts underneath — the effect is only visible when reads are stratified by
+their true origin.
+
+The methodological basis is a benchmark of kraken2-based in-silico phage detection; these
+figures come from it, and the simulation script lives there too
+(`p0126-kraken2phage/scripts/ont_pilot.sh`).
 
 ---
 

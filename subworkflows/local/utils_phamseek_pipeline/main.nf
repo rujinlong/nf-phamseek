@@ -115,6 +115,32 @@ def validateMode() {
     if (!(params.l2_input in ['all_nonhuman', 'nonhuman_nonviral'])) {
         error("--l2_input must be 'all_nonhuman' or 'nonhuman_nonviral'; got '${params.l2_input}'.")
     }
+    // Pure parameter checks belong here, not in resolveDatabases(): that function
+    // returns early under -stub, so a check placed there never runs in a stub.
+    // .toString() is load-bearing: a GString never equals a String, so
+    // `"${x}" in ['auto', ...]` is false even when x is exactly 'auto'.
+    // Note --db_has_decoy true also arrives as a Boolean, hence the coercion.
+    if (!(params.db_has_decoy.toString() in ['auto', 'true', 'false'])) {
+        error(
+            "--db_has_decoy must be 'auto', 'true' or 'false'; got '${params.db_has_decoy}'.\n" +
+            "  'auto' reads the database's own taxonomy and reports each decoy class\n" +
+            "  separately; use an explicit value only to override that."
+        )
+    }
+    // Bracken is off by default because its model assumes one fixed read length,
+    // which ONT violates by construction. Whoever turns it back on has to supply
+    // the length themselves -- there is no defensible default across ONT runs, and
+    // a silently wrong -r would produce plausible numbers rather than an error.
+    if (!params.skip_bracken && !params.bracken_read_length) {
+        error(
+            "--bracken_read_length is required when bracken is enabled.\n" +
+            "  Bracken re-estimates abundance from a k-mer distribution built for one\n" +
+            "  fixed read length; ONT runs have no single such length, so there is no\n" +
+            "  safe default. Set it from the median read length of your own run\n" +
+            "  (nanoq reports it), or leave bracken off -- kraken2 read counts and RPM\n" +
+            "  are reported either way and do not depend on it."
+        )
+    }
 }
 
 //

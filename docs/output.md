@@ -50,7 +50,8 @@ row sits — nothing more.
 
 | Flag | Meaning |
 |---|---|
-| `plasmid_mge_ambiguity_risk` | The database was declared to have no decoy sequences (`--db_has_decoy` not set). Expect roughly 37% of plasmid-derived sequence to be called phage. |
+| `plasmid_mge_ambiguity_risk` | The database has no plasmid decoy sequences. Expect roughly 37% of plasmid-derived sequence to be called phage. |
+| `plasmid_decoy_unverified` | The database's plasmid decoy content could not be determined, so the false-positive rate is unknown — somewhere between ~37% and <=0.4%. Not the same as knowing there is none, and not the same as safe. |
 | `lca_stopped_above_most_specific_rank` | Reads sat on an internal node. Common for sequence shared between close relatives, and also produced by chimeras. |
 | `also_in_ntc` | The taxon appears in a no-template control from this run. |
 | `negative_control_sample` | The row belongs to a control. |
@@ -115,10 +116,32 @@ that kraken2 leaves unclassified — needs the assembly tier, which v0.1 does no
 
 ## Database manifest
 
-`summary/database_manifest.tsv` pins the exact database: path, label, decoy declaration,
-confidence, kraken2 version, sizes and mtimes of the `.k2d` files, checksums of the two
-small ones, and which bracken k-mer distributions were available. A result is only
-interpretable against the database that produced it.
+`summary/database_manifest.tsv` pins the exact database: path, label, confidence, kraken2
+version, sizes and mtimes of the `.k2d` files, checksums of the two small ones, and which
+bracken k-mer distributions were available. A result is only interpretable against the
+database that produced it.
+
+It also records decoy content per class:
+
+| Key | Meaning |
+|---|---|
+| `db_has_decoy_declared` | What the operator declared: `auto`, `true` or `false`. |
+| `decoy_detection_method` | `kraken2-inspect`, `shipped-inspect.txt`, or `unavailable`. |
+| `decoy_human`, `decoy_bacterial`, `decoy_plasmid` | `detected`, `absent` or `unknown`. |
+| `decoy_*_pct` | Share of database minimizers, when detected. |
+
+Three classes rather than one flag, because they are not equally knowable: human and
+bacteria sit on stable taxids, while "plasmid" has no universal node and is matched on
+taxid 45202 or a node named `plasmid*`. Only the **plasmid** class drives the
+false-positive caveat, since that is what the 37.4% -> <=0.4% result is about.
+
+Detection reads the database's own taxonomy, never a sample's kraken2 report — a report
+lists only taxa that received reads, so a decoy database analysing a sample with no human
+reads shows no human node at all.
+
+When a declaration contradicts the database, the report opens with an explicit
+inconsistency warning and follows the declaration. It does not silently pick a side: a
+confidently worded caveat derived from a false premise is worse than no caveat.
 
 ## Why a negative is not a negative
 

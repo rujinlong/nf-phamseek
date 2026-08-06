@@ -9,7 +9,9 @@
             "title": "Input/output options",
             "type": "object",
             "fa_icon": "fas fa-terminal",
-            "required": ["input"],
+            "required": [
+                "input"
+            ],
             "properties": {
                 "input": {
                     "type": "string",
@@ -29,7 +31,10 @@
                 "mode": {
                     "type": "string",
                     "default": "fast",
-                    "enum": ["fast", "full"],
+                    "enum": [
+                        "fast",
+                        "full"
+                    ],
                     "description": "Analysis tier. Only `fast` is implemented in v0.1.",
                     "help_text": "`fast` is read-level: QC, kraken2, two-level host depletion, bracken, report. `full` would add assembly (flye), geNomad and CheckV; it is deliberately not wired up in v0.1 and fails immediately with an explanation rather than running a partial path.",
                     "fa_icon": "fas fa-layer-group"
@@ -61,10 +66,11 @@
                     "fa_icon": "fas fa-folder"
                 },
                 "db_has_decoy": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Declare that the kraken2 database contains non-phage decoy sequences.",
-                    "help_text": "Cannot be detected automatically, and it changes how the report has to be worded. Without decoy sequences roughly 37% of plasmid-derived sequence is called phage; with them the figure is at or below 0.4%. Raising --kraken2_confidence does not fix this, because the signal is real homology (shared integrase and relaxase modules), not stray k-mers.",
+                    "type": "string",
+                    "default": "auto",
+                    "enum": ["auto", "true", "false"],
+                    "description": "Whether the kraken2 database contains non-phage decoy sequences.",
+                    "help_text": "`auto` (default) reads the database's own taxonomy with kraken2-inspect and reports the human, bacterial and plasmid decoy classes separately, so an unverifiable class is marked unknown rather than guessed. `true`/`false` override that with an operator declaration; when a declaration contradicts what the database actually contains, the report says so instead of reasoning from the wrong premise. This matters because it selects the false-positive caveat: without plasmid decoy sequences roughly 37% of plasmid-derived sequence is called phage, with them at or below 0.4%. Raising --kraken2_confidence does not fix that, because the signal is real homology (shared integrase and relaxase modules), not stray k-mers.",
                     "fa_icon": "fas fa-shield-alt"
                 },
                 "db_label": {
@@ -121,7 +127,10 @@
                 "l2_input": {
                     "type": "string",
                     "default": "all_nonhuman",
-                    "enum": ["all_nonhuman", "nonhuman_nonviral"],
+                    "enum": [
+                        "all_nonhuman",
+                        "nonhuman_nonviral"
+                    ],
                     "description": "Which reads the level-2 aligner sees.",
                     "help_text": "`all_nonhuman` (default) sends every read outside the host subtree to the aligner, so a human read misclassified as viral is still caught. `nonhuman_nonviral` withholds viral-classified reads: marginally faster, but it opens exactly that gap.",
                     "fa_icon": "fas fa-code-branch"
@@ -151,21 +160,31 @@
                 },
                 "skip_bracken": {
                     "type": "boolean",
-                    "default": false,
-                    "description": "Skip bracken abundance re-estimation.",
-                    "help_text": "Bracken is skipped automatically, with a warning, when the database has no database<N>mers.kmer_distrib files. Note that bracken's model assumes a fixed read length, which fits ONT data poorly.",
+                    "default": true,
+                    "description": "Skip bracken abundance re-estimation (default: skipped).",
+                    "help_text": "Off by default on purpose: bracken re-estimates abundance from a k-mer distribution built for one fixed read length, an assumption ONT reads violate by construction. Kraken2 read counts and the RPM derived from them are reported regardless and do not depend on bracken. If you enable it, set bracken_read_length from the median read length of your own run -- there is no defensible default. Bracken is also skipped automatically, with a warning, when the database has no database<N>mers.kmer_distrib files.",
                     "fa_icon": "fas fa-forward"
                 },
                 "bracken_read_length": {
-                    "type": "integer",
-                    "default": 150,
-                    "description": "Read length whose k-mer distribution bracken should use.",
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "description": "Read length whose k-mer distribution bracken should use. Required when skip_bracken is false; no default, because ONT runs differ.",
                     "fa_icon": "fas fa-ruler"
                 },
                 "bracken_level": {
                     "type": "string",
                     "default": "S",
-                    "enum": ["D", "P", "C", "O", "F", "G", "S"],
+                    "enum": [
+                        "D",
+                        "P",
+                        "C",
+                        "O",
+                        "F",
+                        "G",
+                        "S"
+                    ],
                     "description": "Taxonomic rank for bracken re-estimation.",
                     "fa_icon": "fas fa-layer-group"
                 },
@@ -278,13 +297,29 @@
         }
     },
     "allOf": [
-        { "$ref": "#/definitions/input_output_options" },
-        { "$ref": "#/definitions/database_options" },
-        { "$ref": "#/definitions/qc_options" },
-        { "$ref": "#/definitions/host_depletion_options" },
-        { "$ref": "#/definitions/classification_options" },
-        { "$ref": "#/definitions/reporting_options" },
-        { "$ref": "#/definitions/max_job_request_options" },
-        { "$ref": "#/definitions/generic_options" }
+        {
+            "$ref": "#/definitions/input_output_options"
+        },
+        {
+            "$ref": "#/definitions/database_options"
+        },
+        {
+            "$ref": "#/definitions/qc_options"
+        },
+        {
+            "$ref": "#/definitions/host_depletion_options"
+        },
+        {
+            "$ref": "#/definitions/classification_options"
+        },
+        {
+            "$ref": "#/definitions/reporting_options"
+        },
+        {
+            "$ref": "#/definitions/max_job_request_options"
+        },
+        {
+            "$ref": "#/definitions/generic_options"
+        }
     ]
 }

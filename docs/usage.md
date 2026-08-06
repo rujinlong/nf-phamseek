@@ -84,7 +84,7 @@ which fits ONT data poorly; kraken2 read counts are the primary abundance measur
 |---|---|---|
 | `--mode` | `fast` | `full` (assembly tier) is not implemented in v0.1 and fails with an explanation. |
 | `--kraken2_confidence` | `0.02` | Not kraken2's default of 0. At 0 a single k-mer hit calls a taxon, which made 61% of human and 38% of clean bacterial contigs look like phage. Raising it further does not remove plasmid/MGE false positives. |
-| `--db_has_decoy` | off | Declare that the database contains non-phage decoy sequences. Cannot be detected automatically; changes how the report words its false-positive caveat. |
+| `--db_has_decoy` | `auto` | `auto` reads the database's taxonomy and reports the human, bacterial and plasmid decoy classes separately. `true`/`false` override it; a declaration that contradicts the database produces an explicit inconsistency warning in the report. |
 | `--min_reads` | `10` | Reporting floor. Rows below it are still printed, marked `below_threshold`. |
 | `--min_rpm` | `1.0` | Per million **non-host** reads. |
 | `--chopper_min_quality` | `10` | Mean Phred per read. |

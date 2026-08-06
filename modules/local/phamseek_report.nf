@@ -19,6 +19,9 @@ process PHAMSEEK_REPORT {
           path(diagnostics),
           path(bracken,  stageAs: 'optional_bracken/*'),
           path(l2_stats, stageAs: 'optional_l2/*')
+    // Run-level, so it arrives as a value channel and is reused for every
+    // sample. Carries the decoy classes actually found in the database.
+    path db_manifest
 
     output:
     tuple val(meta), path("${meta.id}.phamseek.tsv"),  emit: tsv
@@ -54,7 +57,8 @@ process PHAMSEEK_REPORT {
         --min-reads ${params.min_reads} \\
         --min-rpm ${params.min_rpm} \\
         --db-label '${db_label}' \\
-        --db-has-decoy ${params.db_has_decoy} \\
+        --db-has-decoy '${params.db_has_decoy}' \\
+        --db-manifest ${db_manifest} \\
         --kraken-confidence ${params.kraken2_confidence} \\
         \$BRACKEN_ARG \$L2_ARG
 
@@ -66,7 +70,7 @@ process PHAMSEEK_REPORT {
 
     stub:
     """
-    printf 'sample_id\\tsample_type\\ttaxon_name\\ttaxid\\trank\\treads\\treads_direct\\trpm_nonhost\\tpct_nonhost\\tbracken_est_reads\\tbracken_fraction\\tcall\\tevidence\\tflags\\tnot_for_clinical_diagnosis\\n' \\
+    printf 'sample_id\\tsample_type\\ttaxon_name\\ttaxid\\trank\\tis_leaf\\treads\\treads_clade\\trpm_nonhost\\tpct_nonhost\\tnonhost_denominator\\tbracken_est_reads\\tbracken_fraction\\tcall\\tevidence\\tflags\\tnot_for_clinical_diagnosis\\n' \\
         > ${meta.id}.phamseek.tsv
     echo '{"sample_id":"${meta.id}","sample_type":"sample","platform":"ont","candidates":[],"caveats":["stub"],"classification":{},"host_depletion":{},"qc":{},"chimera_diagnostics":{}}' \\
         > ${meta.id}.phamseek.json

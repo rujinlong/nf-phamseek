@@ -125,7 +125,9 @@ workflow PHAMSEEK {
             [ meta, report, nraw, nfilt, l1s, diag, brk ?: no_bracken, l2s ?: no_l2 ]
         }
 
-    PHAMSEEK_REPORT( ch_report_in )
+    // `.first()` turns the single manifest into a value channel, so the report
+    // process runs once per sample rather than once in total.
+    PHAMSEEK_REPORT( ch_report_in, DB_MANIFEST.out.manifest.first() )
     ch_versions = ch_versions.mix(PHAMSEEK_REPORT.out.versions.first())
 
     //

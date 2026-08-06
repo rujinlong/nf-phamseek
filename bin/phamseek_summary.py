@@ -246,6 +246,48 @@ def render_html(samples, has_ntc, ntc_rpm, run_meta, out_path: Path):
         "close relative in the reference database.</div>"
     )
 
+    # ---- database decoy content -------------------------------------
+    # Identical across samples in a run, so it is stated once, up front: it
+    # decides which false-positive caveat applies to every row below.
+    decoy = ((samples[0].get("database") or {}).get("decoy") or {}) if samples else {}
+    if decoy:
+        if decoy.get("inconsistency"):
+            parts.append(
+                '<div class="banner"><strong>Database declaration does not match the '
+                f'database.</strong> {html.escape(decoy["inconsistency"])}</div>'
+            )
+        bits = []
+        for cls in ("human", "bacterial", "plasmid"):
+            info = (decoy.get("classes") or {}).get(cls) or {}
+            eff = info.get("effective", "unknown")
+            pct = info.get("pct_of_minimizers", "NA")
+            word = {
+                "present_detected": "detected",
+                "present_declared": "declared present",
+                "absent_detected": "not in database",
+                "absent_declared": "declared absent",
+            }.get(eff, "unknown")
+            extra = (
+                f" ({pct}% of minimizers)"
+                if eff == "present_detected" and pct not in ("NA", "", None)
+                else ""
+            )
+            cls_name = "flag" if word in ("not in database", "unknown") else "flag info"
+            bits.append(
+                f'<span class="{cls_name}">{cls} decoy: {html.escape(word)}{extra}</span>'
+            )
+        parts.append(
+            '<p class="muted">Reference database decoy content ('
+            + html.escape(str(decoy.get("detection_method", "unknown")))
+            + ", declaration <code>"
+            + html.escape(str(decoy.get("declared", "auto")))
+            + "</code>): "
+            + " ".join(bits)
+            + ". The plasmid class is the one that sets the false-positive caveat: "
+            "without plasmid decoy sequences roughly 37% of plasmid-derived sequence "
+            "is called phage, with them at or below 0.4%.</p>"
+        )
+
     if has_ntc:
         parts.append(
             '<p class="muted">A no-template control is present in this run. Taxa also '
