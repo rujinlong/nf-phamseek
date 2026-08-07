@@ -66,10 +66,12 @@
                     "fa_icon": "fas fa-folder"
                 },
                 "db_has_decoy": {
-                    "type": "string",
+                    "type": [
+                        "string",
+                        "boolean"
+                    ],
                     "default": "auto",
-                    "enum": ["auto", "true", "false"],
-                    "description": "Whether the kraken2 database contains non-phage decoy sequences.",
+                    "description": "Whether the kraken2 database contains non-phage decoy sequences: auto (default), true or false.",
                     "help_text": "`auto` (default) reads the database's own taxonomy with kraken2-inspect and reports the human, bacterial and plasmid decoy classes separately, so an unverifiable class is marked unknown rather than guessed. `true`/`false` override that with an operator declaration; when a declaration contradicts what the database actually contains, the report says so instead of reasoning from the wrong premise. This matters because it selects the false-positive caveat: without plasmid decoy sequences roughly 37% of plasmid-derived sequence is called phage, with them at or below 0.4%. Raising --kraken2_confidence does not fix that, because the signal is real homology (shared integrase and relaxase modules), not stray k-mers.",
                     "fa_icon": "fas fa-shield-alt"
                 },
@@ -211,7 +213,7 @@
                 "min_rpm": {
                     "type": "number",
                     "default": 1.0,
-                    "description": "Minimum reads per million non-host reads for `candidate_high_abundance`.",
+                    "description": "Minimum reads per million non-host reads for `candidate_passes_abundance_screen`.",
                     "help_text": "The denominator is non-host reads, not total reads: in plasma and CSF the human fraction dominates, and normalising by total reads would make the same organism look far rarer in a sample that simply had more host background.",
                     "fa_icon": "fas fa-percent"
                 }

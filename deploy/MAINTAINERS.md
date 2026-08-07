@@ -1,85 +1,82 @@
-# Building and shipping phamseek
+# 构建与交付 phamseek
 
-For us, not for the collaborator. Their document is [INSTALL.md](INSTALL.md).
+这份文档给我们自己,不给合作方。发给他们的是 [INSTALL.md](INSTALL.md)(英文,他们照着一步步操作的那份)。
 
 ---
 
-## What lives here
+## 这里有什么
 
-| File | Runs where | Purpose |
+| 文件 | 在哪跑 | 用途 |
 |---|---|---|
-| [preflight.sh](preflight.sh) | target machine | read-only health check; prints a report, writes `preflight.json`, exits 0/1/2 |
-| [pack_offline.sh](pack_offline.sh) | our machine, online | builds the route B bundle |
-| [apptainer/phamseek.def](apptainer/phamseek.def) | our machine | container definition; consumes the route B payload |
-| [apptainer/build_sif.sh](apptainer/build_sif.sh) | our machine | stages the inputs and runs `apptainer build` |
-| [db_package.sh](db_package.sh) | our machine | splits, checksums and functionally fingerprints a database |
-| [db_verify.sh](db_verify.sh) | target machine | four-gate verification; travels inside every package |
-| [offline.config](offline.config) | target machine | Nextflow hardening, layered with `-c` |
-| [assets/smoke_contigs.fna](assets/smoke_contigs.fna) | both | the fixed 12-sequence input behind gate 4 |
+| [preflight.sh](preflight.sh) | 目标机 | 只读健康检查;打印报告、写出 `preflight.json`,退出码 0/1/2(参数错误是 3) |
+| [pack_offline.sh](pack_offline.sh) | 我们的机器,联网 | 构建路线 B 的离线包 |
+| [apptainer/phamseek.def](apptainer/phamseek.def) | 我们的机器 | 容器定义;直接用路线 B 的 payload |
+| [apptainer/build_sif.sh](apptainer/build_sif.sh) | 我们的机器 | 准备输入并执行 `apptainer build` |
+| [db_package.sh](db_package.sh) | 我们的机器 | 给数据库分卷、算校验和、记录功能指纹 |
+| [db_verify.sh](db_verify.sh) | 目标机 | 四道 gate 验证;随每个数据库包一起发出 |
+| [offline.config](offline.config) | 目标机 | Nextflow 加固配置,用 `-c` 叠加 |
+| [assets/smoke_contigs.fna](assets/smoke_contigs.fna) | 两边 | gate 4 用的那份固定输入,12 条序列 |
 
 ---
 
-## The one thing that must stay true
+## 唯一不能破的一条
 
-`pixi.lock` is the single source of truth for what software ships. All three routes are
-derived from it and from nothing else:
+`pixi.lock` 是「交付哪些软件」的唯一事实来源。三条路线全部由它推导,不依赖任何别的东西:
 
-- Route A resolves it directly with `pixi install --frozen`.
-- Route B packs the exact same locked packages with `pixi-pack`.
-- Route C **consumes the route B payload**. The container never solves an environment,
-  because a container that re-solves makes the lock file decorative.
+- 路线 A 用 `pixi install --frozen` 直接解析它。
+- 路线 B 用 `pixi-pack` 打包完全相同的那批 locked 包。
+- 路线 C **直接用路线 B 的 payload**。容器从不自己求解环境 —— 会重新求解的容器让 lock 文件形同虚设。
 
-If you ever find yourself running `pixi install` without `--frozen`, or adding a
-`conda install` to the Apptainer `%post`, stop: the three routes have silently diverged.
+一旦发现自己在跑不带 `--frozen` 的 `pixi install`,或往 Apptainer 的 `%post` 里加了 `conda install`,
+立刻停手:三条路线已经悄悄分叉了。
 
 ---
 
-## Architecture policy
+## 架构策略
 
-Development and validation happen on linux-aarch64 (DGX Spark). The collaborator's
-workstation is linux-64. Both platforms are in `pixi.lock` and both resolve.
+开发与验证在 linux-aarch64(DGX Spark)上进行。合作方的 workstation 是 linux-64。`pixi.lock` 同时
+收了这两个平台,两边都能解析出环境。
 
-**We do not cross-build.** No qemu, no cross-architecture CI. `pixi-pack --create-executable`
-embeds a `pixi-unpack` binary that must match the target, and Apptainer builds natively
-only. Each architecture is built on its own machine. [build_sif.sh](apptainer/build_sif.sh)
-refuses a mismatched `--platform` rather than producing a broken image.
+**我们不做交叉构建。** 不用 qemu,不做跨架构 CI。`pixi-pack --create-executable` 会嵌入一个必须与
+目标平台匹配的 `pixi-unpack` 二进制,而 Apptainer 只支持本机构建。每个架构在它自己的机器上构建。
+[build_sif.sh](apptainer/build_sif.sh) 碰到不匹配的 `--platform` 会直接拒绝,而不是产出一个坏镜像。
 
 ---
 
-## Deployment day: building the linux-64 artifacts
+## 部署当天:构建 linux-64 产物
 
-Run these on **any x86_64 Linux machine with internet access**. Nothing here has been
-executed yet — the aarch64 equivalents have, and the only difference is the platform
-argument.
+以下命令在**任何一台联网的 x86_64 Linux 机器**上跑。这套流程还没有实际执行过 —— 执行过的是 aarch64
+版本,唯一的区别就是平台参数。
 
 ```bash
-# --- 0. Get the tools (once per machine) -----------------------------------
+# --- 0. 装工具(每台机器一次)---------------------------------------------
 curl -fsSL https://pixi.sh/install.sh | bash
 export PATH="$HOME/.pixi/bin:$PATH"
 pixi global install pixi-pack
 
-# --- 1. Get the repository --------------------------------------------------
-git clone https://github.com/rujinlong/phamseek.git
-cd phamseek
+# --- 1. 取仓库 --------------------------------------------------------------
+git clone https://github.com/rujinlong/nf-phamseek.git
+cd nf-phamseek
 
-# --- 2. Materialize the environment from the lock, never re-solving ---------
-#     Needed because pack_offline.sh uses this nextflow to pre-fetch plugins.
+# --- 2. 按 lock 文件把环境装出来,绝不重新求解 ------------------------------
+#     必需,因为 pack_offline.sh 要用这个 nextflow 预取插件。
 pixi install --frozen
 
-# --- 3. Route B: the offline bundle ----------------------------------------
+# --- 3. 路线 B:离线包 ------------------------------------------------------
 ./deploy/pack_offline.sh --platform linux-64
 #     -> dist/phamseek-offline-v0.1.0-linux-64/
 #     -> dist/phamseek-offline-v0.1.0-linux-64.tar.zst        (~1.2 GB)
+#        机器上没有 zstd 时回退成 .tar.gz
 #     -> dist/phamseek-offline-v0.1.0-linux-64.tar.zst.sha256
 
-# --- 4. Route C: the container ---------------------------------------------
+# --- 4. 路线 C:容器 --------------------------------------------------------
 ./deploy/apptainer/build_sif.sh --platform linux-64
 #     -> ~/singularity/phamseek-0.1.0-x86_64.img              (~1.5 GB)
 #     -> ~/singularity/phamseek-0.1.0-x86_64.img.sha256
 
-# --- 5. Prove the bundle installs with no network --------------------------
-#     Repeat the air-gap test on x86_64 before shipping. Do not skip this:
-#     it is what caught the missing-CA-store failure on aarch64.
+# --- 5. 证明离线包在无网络下能装上 ------------------------------------------
+#     发货前在 x86_64 上重做一遍气隙测试。不要跳过:
+#     aarch64 上那次缺 CA store 的失败就是它抓出来的。
 apptainer build /tmp/deb12.sif docker://debian:12-slim
 cp -a dist/phamseek-offline-v0.1.0-linux-64 /tmp/ag/bundle
 apptainer exec --net --network=none --cleanenv \
@@ -91,7 +88,7 @@ apptainer exec --net --network=none --cleanenv \
            source /tmp/ag/phamseek/activate.sh
            nextflow -version && kraken2 --version'
 
-# --- 6. Verify the container ------------------------------------------------
+# --- 6. 验证容器 ------------------------------------------------------------
 apptainer exec --cleanenv ~/singularity/phamseek-0.1.0-x86_64.img kraken2 --version
 apptainer exec --cleanenv \
   -B /path/to/databases:/db:ro \
@@ -101,51 +98,46 @@ apptainer exec --cleanenv \
           /opt/phamseek/pipeline/deploy/assets/smoke_contigs.fna
 ```
 
-`--net --network=none` gives a real air gap: loopback only, DNS fails. It needs no root.
-Unprivileged `unshare -rn` does **not** work on our machines — AppArmor's
-`kernel.apparmor_restrict_unprivileged_userns=1` blocks it.
+`--net --network=none` 是真气隙:只剩 loopback,DNS 解析失败,而且不需要 root。非特权的
+`unshare -rn` 在我们的机器上**用不了** —— AppArmor 的
+`kernel.apparmor_restrict_unprivileged_userns=1` 会拦下它。
 
 ---
 
-## Packaging a database
+## 打包数据库
 
 ```bash
-# Small database, for smoke testing the pipeline itself
+# 小库,用来给 pipeline 本身做冒烟测试
 ./deploy/db_package.sh \
     --db-dir /home/allen/data2/db/kraken2/inphared_7Apr2026 \
     --name inphared_7Apr2026 \
     --out /mnt/nas26/outbox --volume-size 2G \
     --source "INPHARED 7 Apr 2026 cultured phage genomes + ICTV taxonomy"
 
-# The production database
+# 生产库
 ./deploy/db_package.sh \
     --db-dir /home/allen/data2/db/kraken2/inphared_decoy \
     --name inphared_decoy \
     --out /mnt/nas26/outbox --volume-size 2G --threads 16 \
     --source "INPHARED 7 Apr 2026 + bacteria/plasmid/human decoy"
-#   level is auto-selected: 7.7 GiB -> zstd -3
+#   level 自动选择:7.7 GiB -> zstd -3
 ```
 
-Notes that matter:
+几条要紧的:
 
-- **`--level` is now chosen from the database size** and you should not normally set it:
-  3 above 2 GiB, 19 below. A kraken2 hash table is close to incompressible, so level 19 on
-  7.7 GB costs about an hour of CPU and saves almost nothing. The chosen level and the
-  reason are printed at the top of every run.
-- **`--sign` whenever the recipient is an institution.** Checksums prove integrity;
-  only a signature proves authorship, and hospital information security asks for the
-  latter. Send the public key by a separate channel. **Not yet enabled — see Known gaps.**
-- **`--no-host-metadata`** omits our hostname and absolute source path from the manifest
-  if the recipient treats internal paths as information disclosure.
-- **Package a sealed build, never a live directory.** The manifest and the tar are
-  produced by separate passes over the data; if the database can change between them,
-  the package is internally inconsistent and gate 3 will fail on the receiving side for
-  no visible reason.
-- `--long=31` is used on both the compressing and decompressing side. Without it on the
-  decompressing side, zstd **refuses** a large-window frame with "Frame requires too much
-  memory for decoding" — a decoder limit that reads exactly like corruption.
+- **`--level` 现在按数据库大小自动选**,正常情况下不要手动指定:大于 2 GiB 用 3,否则用 19。kraken2 的
+  hash table 几乎不可压缩,7.7 GB 的库用 level 19 要多烧约一小时 CPU,却几乎省不下空间。选定的 level
+  和理由会打印在每次运行的开头。
+- **收件方是机构时一律加 `--sign`。** 校验和证明完整性,只有签名能证明它出自谁手,而医院信息安全部门要的是
+  后者。公钥走另一条渠道发。**尚未启用 —— 见「已知缺口」。**
+- **`--no-host-metadata`** 从 manifest 里去掉我们的主机名与源目录绝对路径,用于收件方把内部路径视为
+  信息泄露的场合。
+- **只打包已封存的构建,绝不打包还在变动的目录。** manifest 和 tar 是对同一批数据的两趟独立扫描;
+  数据库若能在两趟之间发生变化,包本身就是自相矛盾的,接收侧的 gate 3 会莫名其妙失败。
+- 压缩侧和解压侧都用 `--long=31`。解压侧不加,zstd 会**拒绝**大窗口帧并报
+  "Frame requires too much memory for decoding" —— 这是解码器本身的限制,但报错看起来和数据损坏一模一样。
 
-Always verify your own package through the receiving path before shipping it:
+发货前一律先走一遍接收侧路径,验证自己的包:
 
 ```bash
 ./deploy/db_verify.sh --package-dir /mnt/nas26/outbox/inphared_decoy_YYYYMMDD \
@@ -154,83 +146,79 @@ Always verify your own package through the receiving path before shipping it:
 
 ---
 
-## Database layout expected on the target
+## 目标机上预期的数据库布局
 
-`--db_dir` is a root directory holding one subdirectory per database. **This layout is
-fixed for v0.1:**
+`--db_dir` 是一个根目录,每个数据库占一个子目录。**v0.1 的这个布局是固定的:**
 
 ```
 <db_dir>/
-├── kraken2/<db_name>/   hash.k2d, opts.k2d, taxo.k2d   REQUIRED (default inphared_decoy)
-├── host/                minimap2 CHM13v2 .mmi index    REQUIRED
-├── genomad_db/          reserved for v0.2 — absent is normal
-└── checkv/              reserved for v0.2 — absent is normal
+├── kraken2/<db_name>/   hash.k2d, opts.k2d, taxo.k2d   必需(推荐 inphared_decoy)
+├── host/                minimap2 CHM13v2 .mmi 索引     必需
+├── genomad_db/          v0.2 预留 —— 缺失是正常的
+└── checkv/              v0.2 预留 —— 缺失是正常的
 ```
 
-[preflight.sh](preflight.sh) resolves three shapes: this root, a flat
-`<db_dir>/kraken2/`, and a bare kraken2 database directory. It reports which one it found.
-`find -L` is used so a database directory that is a symlink to another volume is still
-traversed — our own databases are laid out that way, and without `-L` find silently
-returns nothing.
+[preflight.sh](preflight.sh) 能识别三种布局:上面这个根目录、扁平的 `<db_dir>/kraken2/`、以及直接
+指向一个 kraken2 数据库目录。它会报告自己识别出的是哪一种。查找用 `find -L`,这样即使数据库目录是
+指向另一个卷的符号链接也能遍历进去 —— 我们自己的数据库就是这么放的,不加 `-L` 时 find 会静默地
+什么都找不到。
 
-Severity is deliberate: **missing `host/` is a WARN** (host depletion is on by default,
-but `--skip_host_removal true` is a real fallback), while **missing `genomad_db/` and
-`checkv/` are INFO** — v0.1 is Tier 1 only, so their absence is the expected state and a
-warning would send the collaborator hunting for databases that do not yet matter.
+这几档严重级别是刻意定的:**缺 `host/` 报 WARN**(host depletion 默认开启,但 `--skip_host_removal true`
+是一条真实可用的退路),而**缺 `genomad_db/` 与 `checkv/` 报 INFO** —— v0.1 只有 Tier 1,它们不存在
+才是预期状态,报 warning 会让合作方去找根本还用不上的数据库。
 
 ---
 
-## Measured defaults these scripts hard-code
+## 脚本里写死的实测默认值
 
-Two numbers appear in the deploy layer and both come from measurement, not convention.
-If either is ever changed, change it in all the places listed.
+部署层有两个数字,都来自实测而不是惯例。任何一个要改,下表列出的所有位置都得一起改。
 
-| Value | Where | Evidence |
+| 值 | 出现在哪 | 依据 |
 |---|---|---|
-| `--confidence 0.02` | [db_package.sh](db_package.sh) and [db_verify.sh](db_verify.sh) gate 4; documented in [INSTALL.md](INSTALL.md) | The short-read convention of 0.10 costs 15–29 percentage points of sensitivity on ONT reads. kraken2's own default of 0 calls a taxon on one k-mer hit. ONT pilot data: `p0126-kraken2phage/results/ont_pilot/` |
-| `PHAMSEEK_PROD_DB_GB=8` | [preflight.sh](preflight.sh), used only when no `--db-dir` is given | `uhgv_heldout_decoy` (11 GB on disk) measured at 10.8 GB peak RSS, so resident size tracks database size roughly 1:1. 7.7 GB + headroom rounds to 8. With a `--db-dir` the preflight measures the real database instead of using this. |
+| `--confidence 0.02` | [db_package.sh](db_package.sh) 与 [db_verify.sh](db_verify.sh) 的 gate 4;[INSTALL.md](INSTALL.md) 里有说明 | 短读惯用的 0.10 在 ONT 上要付出灵敏度代价:read identity 95% 时损失 15 个百分点,87% 时损失 29 个。kraken2 自己的默认值 0 则单个 k-mer 命中就下 taxon 判定。ONT pilot 数据:[p0126-kraken2phage/results/ont_pilot/](file:///home/allen/github/rujinlong/p0126-kraken2phage/results/ont_pilot/) |
+| `PHAMSEEK_PROD_DB_GB=8` | [preflight.sh](preflight.sh),仅在没给 `--db-dir` 时使用 | `uhgv_heldout_decoy`(磁盘 11 GB)实测峰值 RSS 10.8 GB,即常驻内存与库大小大致 1:1。7.7 GB 加余量取整到 8。给了 `--db-dir` 时 preflight 直接测真实数据库,不用这个值。 |
 
-Gate 4 compares taxids exactly, so the confidence value is baked into every
-`SMOKE_EXPECTED.tsv`. Changing it invalidates every database package already shipped —
-they would fail gate 4 on re-verification. Repackage if you change it.
+gate 4 逐条精确比对 taxid,所以 confidence 值已经固化进每一份 `SMOKE_EXPECTED.tsv`。改动它会让所有
+已经发出的数据库包失效 —— 重新验证时它们会在 gate 4 失败。改了就得重新打包。
 
-## Adding a Nextflow plugin
+## 新增 Nextflow 插件
 
-[pack_offline.sh](pack_offline.sh) discovers plugins by grepping `nextflow.config` for
-`id 'name@version'` and pre-fetches each one into the bundle's `NXF_HOME`. Two rules:
+[pack_offline.sh](pack_offline.sh) 靠 grep [nextflow.config](../nextflow.config) 里的
+`id 'name@version'` 发现插件,并把每个都预取进离线包的 `NXF_HOME`。两条规则:
 
-- **Always pin a version.** An unpinned `id 'nf-schema'` is not matched by the grep, is
-  not pre-fetched, and fails on the target with a download error.
-- **Re-run `pack_offline.sh` after changing the plugin list.** The bundle carries the
-  plugins that existed when it was built.
+- **必须钉版本。** 不带版本的 `id 'nf-validation'` 匹配不上那条 grep,不会被预取,到目标机上以下载
+  失败告终。
+- **改动插件列表后重跑 [pack_offline.sh](pack_offline.sh)。** 离线包带的是构建当时存在的那批插件。
 
-The framework jar itself does not need pre-fetching: the bioconda `nextflow` package
-ships `nextflow-<ver>-one.jar` under `$PREFIX/share/nextflow/dist`, so the launcher never
-downloads it. Verified with a clean `NXF_HOME` — no `framework/` or `capsule/` directory
-is created.
+框架 jar 本身不需要预取:bioconda 的 `nextflow` 包在 `$PREFIX/share/nextflow/dist` 下自带
+`nextflow-<ver>-one.jar`,启动器不会去下载。已用干净的 `NXF_HOME` 验证过 —— 不会生成 `framework/`
+或 `capsule/` 目录。
 
 ---
 
-## Known gaps
+## 已知缺口
 
-Recorded rather than fixed, so the next person does not rediscover them.
+记录下来而不是修掉,免得下一个人重新踩一遍。
 
-- **Database packages are not signed yet.** `--sign <key-id>` is implemented and produces
-  detached armored signatures over `MANIFEST.tsv` and `SHA256SUMS.volumes` plus an exported
-  public key, but no key has been designated. Signing attributes authorship, so the key and
-  the publishing identity are the user's decision. **Choose a key before the first real
-  release** — hospital information security asks for authenticity, and checksums only
-  provide integrity. Until then `db_package.sh` prints a warning on every run.
-- **No end-to-end pipeline smoke run in the preflight.** The preflight validates the
-  machine, not the installation. A `--deep` mode that runs the delivered pipeline on a
-  tiny fixture with the network forced off would convert "this machine looks plausible"
-  into "this exact installation ran here". It is the single highest-value addition left.
-- **geNomad and CheckV databases are checked for existence only.** Their tool/database
-  version compatibility is not verified. The right fix mirrors the kraken2 approach:
-  record each tool's output on a fixed fixture at packaging time and re-check it on
-  receipt.
-- **One broken symlink in the packed environment**
-  (`tensorflow/libtensorflow.so.2`). It is present identically in a plain
-  `pixi install` environment, so it comes from the upstream conda package and is not a
-  packing artifact. geNomad, which depends on tensorflow, runs correctly. Do not add a
-  "no broken symlinks" check: it would reject a working install.
+- **`--db_dir` 的解析比上面那张布局图浅一层,preflight 会放行而 pipeline 会失败。**
+  [preflight.sh](preflight.sh) 会用 `find -L` 钻进 `<db_dir>/kraken2/<db_name>/` 找到数据库并报 PASS,
+  但 pipeline 把 `--db_dir` 直接解析成 `<db_dir>/kraken2` 并就地检查 `hash.k2d`
+  ([utils_phamseek_pipeline/main.nf](../subworkflows/local/utils_phamseek_pipeline/main.nf) 里的
+  `resolveDatabases()` 与 `resolveKraken2Db()`),不会再向下一层。按 [INSTALL.md](INSTALL.md) 的布局
+  装好后再传 `--db_dir`,会报 "kraken2 database ... is incomplete: hash.k2d is missing"。当前可靠的
+  绕法是显式传
+  `--kraken2_db <db_dir>/kraken2/<db_name>`。真正的修法二选一:让 pipeline 也做 preflight 那套单一
+  子目录解析,或把布局收敛成 `.k2d` 直接放在 `kraken2/` 下 —— 后者要同步改 [INSTALL.md](INSTALL.md)
+  与已发出的数据库包说明。
+- **数据库包还没有签名。** `--sign <key-id>` 已实现,会对 `MANIFEST.tsv` 与 `SHA256SUMS.volumes` 产出
+  detached armored 签名,并导出一份公钥,但还没有指定密钥。签名宣示的是署名责任,所以用哪把密钥、
+  以什么身份发布,由用户决定。**必须在首次正式发布前选定密钥** —— 医院信息安全要的是真实性,而校验和只
+  提供完整性。在那之前,[db_package.sh](db_package.sh) 每次运行都会打印一条警告。
+- **preflight 里没有端到端的 pipeline 冒烟测试。** preflight 验证的是机器,不是这次安装本身。一个
+  `--deep` 模式 —— 强制断网、用极小的 fixture 跑一遍交付的 pipeline —— 能把「这台机器看着没问题」变成
+  「这套安装确实在这里跑通过」。这是剩下的改进里价值最高的一项。
+- **geNomad 与 CheckV 数据库只检查存在与否。** 工具与数据库的版本兼容性没有验证。正确的修法是照搬
+  kraken2 那一套:打包时记录每个工具在固定 fixture 上的输出,接收时重新核对。
+- **打包出的环境里有一个失效的符号链接**(`tensorflow/libtensorflow.so.2`)。它在普通
+  `pixi install` 出来的环境里一模一样地存在,所以来自上游 conda 包,不是打包造成的。依赖 tensorflow 的
+  geNomad 运行正常。不要加「不允许断链」的检查:那会把一个能正常工作的安装判成失败。

@@ -1,4 +1,4 @@
-# Citations
+# 引用
 
 ## Pipeline
 
@@ -6,9 +6,9 @@
   workflows. Nat Biotechnol. 2017. doi: 10.1038/nbt.3820
 - **pixi** — https://pixi.sh
 
-## Tools
+## 工具
 
-- **chopper** / **NanoFilt** — De Coster W, Rademakers R. NanoPack2. Bioinformatics. 2023.
+- **chopper**(NanoPack2)— De Coster W, Rademakers R. NanoPack2. Bioinformatics. 2023.
   doi: 10.1093/bioinformatics/btad311
 - **nanoq** — Steinig E, Coin L. nanoq: ultra-fast quality control for nanopore reads.
   J Open Source Softw. 2022. doi: 10.21105/joss.02991
@@ -21,7 +21,7 @@
 - **Bracken** — Lu J, et al. Bracken: estimating species abundance in metagenomics data.
   PeerJ Comput Sci. 2017. doi: 10.7717/peerj-cs.104
 
-## Reference data
+## 参考数据
 
 - **T2T-CHM13v2.0** — Nurk S, et al. The complete sequence of a human genome. Science.
   2022. doi: 10.1126/science.abj6987

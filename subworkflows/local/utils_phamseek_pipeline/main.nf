@@ -156,7 +156,7 @@ def resolveDatabases() {
         return p ? file(p) : null
     }
 
-    def kraken2 = resolve(params.kraken2_db, 'kraken2')
+    def kraken2 = descendIntoSingleDatabase(resolve(params.kraken2_db, 'kraken2'))
     def host    = resolve(params.host_index, 'host')
 
     if (workflow.stubRun) {
@@ -224,7 +224,38 @@ def resolveDatabases() {
 //
 def resolveKraken2Db() {
     def p = params.kraken2_db ?: (params.db_dir ? "${params.db_dir}/kraken2" : null)
-    return p ? file(p) : null
+    return p ? descendIntoSingleDatabase(file(p)) : null
+}
+
+//
+// Accept both database layouts. The documented one nests the database under a
+// name -- <db_dir>/kraken2/<db_name>/hash.k2d -- so that several references can
+// sit side by side; the flat one puts the .k2d files straight in kraken2/.
+//
+// preflight.sh accepts both, so the pipeline must too. When it did not, a
+// collaborator who followed INSTALL.md exactly got a green preflight and then
+// "hash.k2d is missing" from the pipeline: the worst kind of failure, because
+// the check that was supposed to catch it had already passed.
+//
+// Only descends when the choice is unambiguous. Several databases side by side
+// is a real setup, and silently picking one of them would be worse than asking.
+//
+def descendIntoSingleDatabase(dir) {
+    if (dir == null || !dir.exists() || file("${dir}/hash.k2d").exists()) {
+        return dir
+    }
+    def nested = dir.listFiles()?.findAll { it.isDirectory() && file("${it}/hash.k2d").exists() }
+    if (!nested) {
+        return dir            // nothing to descend into; let the caller report it
+    }
+    if (nested.size() > 1) {
+        error(
+            "${dir} holds ${nested.size()} kraken2 databases: " +
+            nested.collect { it.name }.sort().join(', ') + "\n" +
+            "  Pick one explicitly with --kraken2_db ${dir}/<name>."
+        )
+    }
+    return nested[0]
 }
 
 def brackenAvailable() {

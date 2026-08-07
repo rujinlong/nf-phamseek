@@ -62,8 +62,9 @@ ${BOLD}COMMON OPTIONS${RST}
     --input FILE            samplesheet (required)
     --db_dir DIR            database root (required unless --kraken2_db is given)
     --outdir DIR            output directory (default: results)
-    --db_has_decoy          declare that the kraken2 database contains decoy
-                            sequences; changes how the report words its caveats
+    --db_has_decoy VALUE    auto (default), true or false -- whether the kraken2
+                            database holds decoy sequences; changes how the
+                            report words its false-positive caveats
     --db_label NAME         database name recorded in the report
     --skip_host_removal     skip the level-2 aligner (development only)
     --resume                continue a previous run instead of restarting
@@ -87,7 +88,10 @@ ensure_env() {
     require_pixi
     if [ ! -d "${REPO_ROOT}/.pixi/envs/default" ]; then
         echo "${DIM}phamseek: installing the software environment (first run only)...${RST}" >&2
-        pixi install --manifest-path "$MANIFEST" >&2 \
+        # --frozen: install exactly what pixi.lock pins, never re-solve. Without
+        # it a stale clock, a changed channel or an edited pixi.toml would
+        # silently produce a different environment than the one we validated.
+        pixi install --frozen --manifest-path "$MANIFEST" >&2 \
             || die "'pixi install' failed. On an offline host see deploy/INSTALL.md."
     fi
 }
@@ -172,7 +176,7 @@ cmd_doctor() {
 
 cmd_install() {
     require_pixi
-    pixi install --manifest-path "$MANIFEST"
+    pixi install --frozen --manifest-path "$MANIFEST"
     echo "phamseek: environment ready. Verify with 'phamseek doctor'."
 }
 
