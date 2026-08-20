@@ -56,13 +56,19 @@ jobs:
               2>&1 | tee stub.log
 
       # An exit code alone is not enough: Nextflow can complete with processes
-      # that never ran. Assert the two ends of the DAG are present.
+      # that never ran. Assert against the execution trace, not the console log
+      # -- Nextflow elides long process names in the log ("PHAMSEEK:KRAKEN2_R..."),
+      # so grepping the log reports whichever name happened to be truncated as
+      # "did not run" while the pipeline was in fact fine. The trace carries
+      # every task's full name.
       - name: Every stage ran and the run-level report was produced
         run: |
           set -eu
+          trace=$(ls results_stub/pipeline_info/execution_trace_*.txt)
           for proc in ONT_QC KRAKEN2_READS HOST_SPLIT_L1 HOST_DEPLETION_L2 \
                       DB_MANIFEST PHAMSEEK_REPORT PHAMSEEK_SUMMARY; do
-              grep -q "${proc}" stub.log || { echo "${proc} did not run"; exit 1; }
+              grep -q "PHAMSEEK:${proc}" "${trace}" || {
+                  echo "${proc} did not run"; cat "${trace}"; exit 1; }
           done
           test -s results_stub/summary/phamseek_summary.tsv
           test -s results_stub/summary/phamseek_report.html
