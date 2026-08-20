@@ -76,7 +76,17 @@ level 1 removes 0% and level 2 removes 100%. Both paths give the same answer.
    nextflow run rujinlong/nf-phamseek -profile test,nocontainer -stub --outdir stub_results
    ```
 
-3. Run your own data:
+3. Obtain the reference databases. **They are not in the image and not in this
+   repository**, and nothing below runs without them — see
+   [Reference databases](#reference-databases). Once `--db_dir` points at them, this
+   analyses the bundled test data and is the fastest end-to-end check:
+
+   ```bash
+   nextflow run rujinlong/nf-phamseek -profile test,apptainer \
+       --db_dir /path/to/phamseek_db --outdir test_results
+   ```
+
+4. Run your own data:
 
    ```bash
    nextflow run rujinlong/nf-phamseek \
