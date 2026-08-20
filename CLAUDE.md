@@ -198,8 +198,10 @@ C 与 D 都是 Apptainer 镜像但用法完全不同,改动其中一个时别顺
 解压前按钉死的 SHA-256 校验。它不需要 Nextflow 也不需要容器 —— 因为拿库本来就是第一步,
 让第一步依赖后面几步是本末倒置。
 
-库本身托管在 Google Drive(账号 jinlongru@gmail.com,文件夹 `phamseek-db`,已设
-「知道链接的任何人可读」)。要重新打包或换库:
+库本身托管在 Google Drive(账号 jinlongru@gmail.com,文件夹
+[phamseek-db](https://drive.google.com/drive/folders/17p_wXQXmCiO1c4EHOOPcVjk4GAi-1I6O),
+folder id `17p_wXQXmCiO1c4EHOOPcVjk4GAi-1I6O`,已设「知道链接的任何人可读」——
+权限设在**文件夹**上,里面的文件继承,所以新加的文件不必再单独授权)。要重新打包或换库:
 
 ```bash
 # 打包(zstd -3 就够:hash.k2d 与 .mmi 近乎随机,再高的等级只是更慢)
