@@ -107,7 +107,7 @@ process **每个样本跑一次**而不是全程只跑一次。删掉它会静�
 ## 配置分层
 
 ```
-nextflow.config          params 默认值 · 版本 def · 容器默认值 · profiles · manifest · check_max()
+nextflow.config          params 默认值 · 容器默认值 · resourceLimits · profiles · manifest
   └─ conf/base.config    按 label 的资源(process_single/low/medium/high/kraken2)
   └─ conf/modules.config 只放字面量 ext.args;publishDir 在各 module 里(见 INV-NF-03)
   └─ conf/test.config    -profile test:测试 samplesheet + 放宽的阈值
@@ -192,13 +192,43 @@ Nextflow 把命令行上的每个值都当 String 交给流程,于是:
 
 C 与 D 都是 Apptainer 镜像但用法完全不同,改动其中一个时别顺手"统一"另一个。
 
+### 参考库的分发
+
+`deploy/fetch_db.sh` 是给合作方的**唯一**取库入口:只依赖 `curl` / `tar` / `zstd`,断点续传,
+解压前按钉死的 SHA-256 校验。它不需要 Nextflow 也不需要容器 —— 因为拿库本来就是第一步,
+让第一步依赖后面几步是本末倒置。
+
+库本身托管在 Google Drive(账号 jinlongru@gmail.com,文件夹 `phamseek-db`,已设
+「知道链接的任何人可读」)。要重新打包或换库:
+
+```bash
+# 打包(zstd -3 就够:hash.k2d 与 .mmi 近乎随机,再高的等级只是更慢)
+mkdir -p ~/data2/db/phamseek-dist && cd ~/data2/db/phamseek-dist
+tar -C ~/data2/db/kraken2 -cf - inphared_decoy | zstd -3 -T8 -o phamseek-db-kraken2-inphared_decoy.tar.zst
+tar -C ~/data2/db/phamseek -hcf - host        | zstd -3 -T8 -o phamseek-db-host-chm13v2.tar.zst
+sha256sum *.tar.zst > SHA256SUMS
+
+# 上传(gws 已在本机授权;⚠ --upload 只接受**当前目录下**的相对路径)
+gws drive files create --json '{"name":"<file>","parents":["<folder-id>"]}' \
+    --upload <file> --upload-content-type application/zstd
+```
+
+然后把新的 file ID 与 SHA-256 回填进 `deploy/fetch_db.sh` 顶部的常量。
+
+⚠ **Google Drive 对公开大文件有每日下载配额**,被拉多了会返回一个 HTML 页面而不是文件。
+脚本会检测到这点并明说(而不是让 tar 报「压缩包损坏」)。真要长期公开发行,应该换 Zenodo:
+永久 DOI、无配额、可引用。
+
 `deploy/preflight.sh` 是只读体检脚本,给出 PASS/WARN/FAIL 并推荐路线;它接受**嵌套与扁平
 两种** kraken2 数据库布局,`descendIntoSingleDatabase()` 必须与它保持一致 —— 曾经不一致过,
 结果是 preflight 全绿、流程却报 `hash.k2d is missing`。
 
 ## CI
 
-- `.github/workflows/ci.yml` —— stub 运行(Nextflow 23.10.0 与最新版两档)+ 负例校验 + shellcheck。
+- `.github/workflows/ci.yml` —— **只在 `workflow_dispatch` 时手动跑**(2026-08-20 起,应要求关掉
+  自动触发)。内容是 stub 运行(Nextflow 24.04.0 与最新版两档)+ 负例校验 + shellcheck。
+  ⚠ 它必须传 `--max_memory 6.GB`:`-profile test` 要 16 GB,而 GitHub runner 只有 15.6 GB,
+  Nextflow 会拒绝调度并报 `Process requirement exceeds available memory`。
 - `.github/workflows/docker.yml` —— 先验 `pixi lock --check --dry-run`,再在 `ubuntu-24.04`
   与 `ubuntu-24.04-arm` 上**各自原生构建**,按 digest 推送,最后单独一个 job 合成多架构
   manifest。不用 QEMU:模拟执行 conda 包的 post-link 脚本会把十几分钟变成几小时。

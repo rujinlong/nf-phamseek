@@ -76,14 +76,22 @@ level 1 removes 0% and level 2 removes 100%. Both paths give the same answer.
    nextflow run rujinlong/nf-phamseek -profile test,nocontainer -stub --outdir stub_results
    ```
 
-3. Obtain the reference databases. **They are not in the image and not in this
-   repository**, and nothing below runs without them — see
-   [Reference databases](#reference-databases). Once `--db_dir` points at them, this
-   analyses the bundled test data and is the fastest end-to-end check:
+3. Get the reference databases. **They are not in the image and not in this
+   repository**, and nothing below runs without them. One command, and `curl` is its
+   only requirement:
+
+   ```bash
+   curl -fsSLO https://raw.githubusercontent.com/rujinlong/nf-phamseek/main/deploy/fetch_db.sh
+   bash fetch_db.sh --outdir /data/phamseek_db
+   ```
+
+   ~8.5 GB downloaded, ~16 GB on disk once unpacked. Resumable, checksummed, and it
+   builds the directory layout the pipeline expects. Then run the bundled test data —
+   the fastest end-to-end check:
 
    ```bash
    nextflow run rujinlong/nf-phamseek -profile test,apptainer \
-       --db_dir /path/to/phamseek_db --outdir test_results
+       --db_dir /data/phamseek_db --outdir test_results
    ```
 
 4. Run your own data:
@@ -140,6 +148,20 @@ copied into the work directory. `--db_dir` expects:
 ```
 
 `--kraken2_db` and `--host_index` override either one individually.
+
+[deploy/fetch_db.sh](deploy/fetch_db.sh) downloads a prebuilt pair in that layout —
+`inphared_decoy` (an INPHARED-derived phage database carrying human, bacterial and
+plasmid decoy sequence) and a `map-ont` minimap2 index of T2T-CHM13v2:
+
+```bash
+bash deploy/fetch_db.sh --outdir /data/phamseek_db            # both
+bash deploy/fetch_db.sh --outdir /data/phamseek_db --component kraken2
+```
+
+It needs only `curl`, `tar` and `zstd`; downloads resume after an interruption and every
+archive is checked against a pinned SHA-256 before it is unpacked. Bring your own database
+instead whenever your target niche differs — that choice matters more than anything else
+in the pipeline, for the reasons below.
 
 The choice of kraken2 database matters more than anything else in the pipeline. What
 matters is **whether it covers the target niche**, not how large or how fast it is:

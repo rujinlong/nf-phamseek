@@ -86,6 +86,19 @@ gzip 要等工具真的读到那里才会失败。)
 
 两者可以分别用 `--kraken2_db` 和 `--host_index` 单独覆盖。
 
+### 一条命令拿到现成的库
+
+```bash
+bash deploy/fetch_db.sh --outdir /data/phamseek_db                    # 两个都要
+bash deploy/fetch_db.sh --outdir /data/phamseek_db --component host   # 只要宿主索引
+```
+
+下载 8.5 GB,解压后占约 16 GB。只依赖 `curl`、`tar`、`zstd`;断点续传,每个包解压前都对
+钉死的 SHA-256 校验一次。拿到的是 `inphared_decoy`(INPHARED 派生、带人源/细菌/质粒 decoy)
+与 T2T-CHM13v2 的 `map-ont` minimap2 索引。
+
+目标生态位不同就自己建库 —— **这个选择对结果的影响大过流程里其他任何参数**。
+
 构建宿主索引 —— preset 必须与 mapping 时用的一致:
 
 ```bash
