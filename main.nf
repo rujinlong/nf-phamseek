@@ -1,12 +1,14 @@
 #!/usr/bin/env nextflow
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    rujinlong/phamseek
+    rujinlong/nf-phamseek
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Phage detection in low-biomass clinical Oxford Nanopore metagenomes.
 
-    Users are not expected to invoke this directly — `bin/phamseek run` is the
-    supported entry point. Github: https://github.com/rujinlong/phamseek
+    Github: https://github.com/rujinlong/nf-phamseek
+
+        nextflow run rujinlong/nf-phamseek -profile apptainer \
+            --input samplesheet.csv --db_dir /path/to/phamseek_db --outdir results
 ----------------------------------------------------------------------------------------
 */
 

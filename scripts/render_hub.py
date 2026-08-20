@@ -42,7 +42,7 @@ DAG = '''graph TD
   E["库选型翻转: UHGV 是肠道 DNA virome<br/>对血浆无用 → INPHARED + decoy"]
   F["ONT 先导: 错误率主导灵敏度<br/>confidence 锁死 0.02"]
   G["嵌合按来源分层: 双向危害<br/>且 root 比例不能当嵌合率读数"]
-  H["架构定案: pixi 管依赖 + Nextflow 编排<br/>对外只暴露 bin/phamseek 一条命令"]
+  H["架构定案: pixi.lock 是依赖 SSOT<br/>容器/pixi/离线包三条路线同一个环境"]
   I["两级 host depletion<br/>分类只改标签, 删除必须是真的"]
   J["db_has_decoy 改 auto<br/>查库自身 taxonomy, 不查样本 report"]
   K["交付层三个静默坑<br/>CA 证书 / Nextflow plugin / login shell"]
@@ -149,7 +149,9 @@ STEPS = [
      "how",
      "依赖 SSOT 是 <code>pixi.toml</code> + <code>pixi.lock</code>(双平台解析,"
      "部署时对方 <code>pixi install</code> 直接可用不必重新 solve);编排是 Nextflow DSL2,"
-     f"但对外只暴露 {f('bin/phamseek')} 一条命令。"
+     f"入口就是标准的 <code>nextflow run rujinlong/nf-phamseek</code>。"
+     f"同一份 lock 还喂给 {f('docker/Dockerfile')},所以容器、pixi 与离线包三条路线"
+     "拿到的是同一个解出来的环境。"
      "<br><br>Nextflow 与 pixi 的接线用 <code>beforeScript</code> + <code>pixi shell-hook</code> —— "
      "不用 Nextflow 的 <code>conda</code> 指令(语义与 pixi 重叠、易误判),"
      "也不只把 <code>bin/</code> 塞进 PATH(会漏掉 <code>LD_LIBRARY_PATH</code> 等 activation 变量)。"),
@@ -387,7 +389,7 @@ sections = [
                            "右,按 read 真实来源分层后,跨 domain 嵌合被分到两侧,到 root 的只有 0.70%。"
                            "这两张图直接决定了 phamseek 的默认参数与报告措辞。") +
           L.callout("link",
-              f"实现:{f('workflows/phamseek.nf')} · {f('bin/phamseek')} · "
+              f"实现:{f('workflows/phamseek.nf')} · {f('nextflow.config')} · "
               f"{f('subworkflows/local/utils_phamseek_pipeline/main.nf')}<br>"
               f"实测依据:{fb('scripts/ont_pilot.sh')} · "
               f"{fb('results/ont_pilot/identity_sweep.tsv')} · "

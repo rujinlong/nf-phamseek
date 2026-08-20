@@ -497,7 +497,7 @@ if have apptainer || have singularity; then
     APP_BIN="$(command -v apptainer || command -v singularity)"
     record "tool.apptainer" PASS "container runtime found: $("${APP_BIN}" --version 2>/dev/null || echo '?')" "${APP_BIN}"
 else
-    record "tool.apptainer" INFO "no apptainer/singularity" "Route C unavailable; routes A and B do not need it."
+    record "tool.apptainer" INFO "no apptainer/singularity" "Routes C and D unavailable; routes A and B do not need a container runtime."
 fi
 
 # --- system CA trust store ---------------------------------------------------
@@ -667,7 +667,7 @@ else
 
     if [[ "${NET_OK}" -eq "${NET_TOTAL}" && "${PC_RC:-1}" -eq 0 ]]; then
         FACT_NET="online"
-        record "net.summary" PASS "All package sources reachable — route A (pixi install) will work"
+        record "net.summary" PASS "All package sources reachable — route A (pixi install) and route D (published container image) will both work"
     elif [[ "${NET_OK}" -eq 0 ]]; then
         FACT_NET="offline"
         record "net.summary" WARN "No package source reachable — you must use the offline package (route B or C)" \

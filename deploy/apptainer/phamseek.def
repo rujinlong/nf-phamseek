@@ -145,17 +145,22 @@ PROFILE
     echo "--- tool versions ---"
     kraken2 --version | head -1
     nextflow -version 2>&1 | grep -i version | head -1
+    # The ONT read-level tier, which is all v0.1 runs.
+    chopper --version
+    nanoq --version
+    minimap2 --version
+    samtools --version | head -1
+    # Reserved for the v0.2 assembly tier; present in the environment, unwired.
     genomad --version
     checkv -h > /dev/null 2>&1 && echo "checkv OK"
     seqkit version
-    fastp --version 2>&1 | head -1
     echo "--- all core tools present ---"
 
 %labels
     Name          phamseek
     Description   Phage detection in clinical metagenomes (kraken2 + geNomad + CheckV)
     Author        Jinlong Ru
-    Homepage      https://github.com/rujinlong/phamseek
+    Homepage      https://github.com/rujinlong/nf-phamseek
 
 %help
     phamseek — phage detection in clinical metagenomes.

@@ -1,7 +1,7 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema",
-    "$id": "https://raw.githubusercontent.com/rujinlong/phamseek/master/nextflow_schema.json",
-    "title": "rujinlong/phamseek pipeline parameters",
+    "$id": "https://raw.githubusercontent.com/rujinlong/nf-phamseek/main/nextflow_schema.json",
+    "title": "rujinlong/nf-phamseek pipeline parameters",
     "description": "Phage detection in low-biomass clinical Oxford Nanopore metagenomes.",
     "type": "object",
     "definitions": {

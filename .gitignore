@@ -6,6 +6,7 @@ results/
 testing/
 testing*
 *.pyc
+__pycache__/
 
 # --- pixi -------------------------------------------------------------------
 # The environment itself is a build artefact (~5 GB); pixi.lock is the source of
@@ -24,3 +25,8 @@ deploy/dist/
 *.tar.gz
 phamseek-env.sh
 preflight.json
+
+# --- generated documentation ------------------------------------------------
+# Rendered by scripts/render_hub.py from the local project context; it embeds
+# absolute file:// links to this machine and is not useful to anyone else.
+docs/learning-hub/

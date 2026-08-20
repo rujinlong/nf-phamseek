@@ -2,27 +2,49 @@
 
 ## 安装
 
+只需要 [Nextflow](https://www.nextflow.io)(`>=23.10.0`)和一个软件来源。Nextflow 会自己
+把流程拉下来:
+
 ```bash
-bin/phamseek install     # 解析锁定的环境;不需要 root
-bin/phamseek doctor      # 确认每个工具都在,并报告插件缓存状态
+nextflow pull rujinlong/nf-phamseek     # 或 git clone 后在仓库目录里跑
 ```
+
+软件来源有三种,用 `-profile` 选:
+
+| profile | 软件来自 | 前置条件 |
+|---|---|---|
+| 不给 / `apptainer` | **默认**。多平台镜像 `docker.io/jinlongru/nf-phamseek:v0.1.0` | 装了 apptainer |
+| `docker` | 同一个镜像 | 装了 docker |
+| `pixi` | 仓库内 `.pixi/` 里那份锁定的 conda 环境 | 先跑一次 `pixi install --frozen` |
+| `nocontainer` | 已经在 `PATH` 上的工具 | 自己保证工具齐全 |
 
 `pixi` 是单个静态二进制。它把环境装进本仓库内的 `.pixi/`,不修改也不干扰已有的 conda 安装。
 没有网络的主机见 [../deploy/INSTALL.md](../deploy/INSTALL.md)。
 
+Nextflow 没有原生的 pixi 支持:`process.pixi` 指令的 PR
+([nextflow-io/nextflow#6157](https://github.com/nextflow-io/nextflow/pull/6157))被关掉,
+改推通用的 `package` 指令([#6342](https://github.com/nextflow-io/nextflow/pull/6342)),
+后者也在 2026 年 2 月停摆关闭。所以 `-profile pixi` 走的是 `beforeScript` + `pixi shell-hook`
+—— 这也正好把 `LD_LIBRARY_PATH` 等 activation 变量一并带上,而只往 `PATH` 里塞 `bin/` 会漏掉它们。
+
 ## 运行
 
 ```bash
-bin/phamseek run \
+nextflow run rujinlong/nf-phamseek \
+    -profile apptainer \
     --input samplesheet.csv \
     --db_dir /path/to/phamseek_db \
     --db_label uhgv_inphared_decoy_2026-04 \
     --outdir results
 ```
 
-加 `--resume` 可以从中断处继续,而不是从头重跑。加 `-stub` 可以走一遍接线而不真正执行任何工具。
+加 `-resume` 可以从中断处继续,而不是从头重跑。加 `-stub` 可以走一遍接线而不真正执行任何工具
+(配 `-profile nocontainer` 最省事,否则为了跑 `touch` 也要先拉一个 5 GB 镜像)。
 
-`bin/phamseek run --help` 会打印每个参数的默认值和帮助文本。
+`nextflow run rujinlong/nf-phamseek --help` 会打印每个参数的默认值和帮助文本。
+
+> `-profile`、`-resume`、`-stub` 是 **Nextflow 自己的**参数,单横线;`--input`、`--db_dir`
+> 这些是流程的参数,双横线。写反了 Nextflow 会当成未知的流程参数而不是报错。
 
 ## Samplesheet
 
@@ -121,14 +143,16 @@ kraken2 会把整个数据库载入内存,所以 phamseek 同一时刻最多跑�
 
 ## 离线运行
 
-除了两步,其余全部离线:
+除了下面这几步,其余全部离线:
 
-1. `pixi install` 第一次会下载软件包。
+1. `pixi install` 第一次会下载软件包(只有 `-profile pixi` 需要)。
 2. Nextflow 第一次运行时会把 `nf-validation` 插件下载到 `$NXF_HOME/plugins`。
 
-`bin/phamseek doctor` 会报告插件是否已缓存。一旦缓存好,`bin/phamseek` 会自动设置
-`NXF_OFFLINE=true`。在联网机器上预先准备这两样东西的做法见
-[../deploy/INSTALL.md](../deploy/INSTALL.md)。
+用容器时还多一次:第一次 `-profile apptainer` 会去 Docker Hub 拉镜像并转成 SIF。
+
+三样东西都缓存好之后设 `NXF_OFFLINE=true` 即可完全离线。在联网机器上预先准备它们的做法见
+[../deploy/INSTALL.md](../deploy/INSTALL.md);离线安装包会把 `NXF_HOME` 指向随包发出的插件目录,
+并自动叠加 [../deploy/offline.config](../deploy/offline.config)。
 
 ## 排错
 

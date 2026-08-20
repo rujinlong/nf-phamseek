@@ -4,9 +4,11 @@
 
 第一个可用版本。对低生物量临床样本的 Oxford Nanopore reads 做 read 级(Tier 1)分析。
 
-- 单一命令入口:`bin/phamseek run`。
-- 依赖由 pixi 钉死(`pixi.lock`,含 linux-64 与 linux-aarch64),每个 task 经 `pixi shell-hook`
-  激活同一个环境。
+- 标准 Nextflow 入口:`nextflow run rujinlong/nf-phamseek`。
+- 软件来源四选一,用 `-profile` 切:`apptainer`(默认)、`docker`、`pixi`、`nocontainer`。
+- 依赖由 pixi 钉死(`pixi.lock`,含 linux-64 与 linux-aarch64)。容器镜像
+  `jinlongru/nf-phamseek` 由 GitHub Actions 从同一份 lock 原生构建 amd64 与 arm64 两个架构
+  并推上 Docker Hub,所以容器、pixi 与离线包三条路线拿到的是同一个解出来的环境。
 - Samplesheet 校验:唯一性、可读性、非空、`.gz` 文件的 gzip 魔数、platform 与 sample-type 词表;
   FASTQ 相对路径相对 samplesheet 自身解析。
 - 用 chopper 与 nanoq 做 QC,过滤前后各测一次。

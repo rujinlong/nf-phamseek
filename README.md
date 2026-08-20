@@ -1,182 +1,274 @@
-# phamseek
+# nf-phamseek
 
-在低生物量临床样本的 Oxford Nanopore 宏基因组中检测噬菌体。
+**Phage detection in low-biomass clinical Oxford Nanopore metagenomes.**
 
-phamseek 读入血浆或脑脊液中已完成 basecalling 的 ONT reads,分两轮独立去除人源序列,
-再拿剩下的 reads 对噬菌体参考库做分类。每次运行产出一份 HTML 报告和一份汇总 TSV,每个
-样本另有一份 TSV 和一份 JSON。
+[![Nextflow](https://img.shields.io/badge/nextflow%20DSL2-%E2%89%A523.10.0-23aa62.svg)](https://www.nextflow.io/)
+[![run with apptainer](https://img.shields.io/badge/run%20with-apptainer-1d355c.svg)](https://apptainer.org/)
+[![run with docker](https://img.shields.io/badge/run%20with-docker-0db7ed?logo=docker)](https://www.docker.com/)
+[![run with pixi](https://img.shields.io/badge/run%20with-pixi-yellow.svg)](https://pixi.sh/)
+[![CI](https://github.com/rujinlong/nf-phamseek/actions/workflows/ci.yml/badge.svg)](https://github.com/rujinlong/nf-phamseek/actions/workflows/ci.yml)
+[![Docker](https://github.com/rujinlong/nf-phamseek/actions/workflows/docker.yml/badge.svg)](https://github.com/rujinlong/nf-phamseek/actions/workflows/docker.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **不用于临床诊断(NOT FOR CLINICAL DIAGNOSIS)。** v0.1 只报告 read 级的 k-mer 证据。
-> 每一个阳性都只是「候选」,必须由正交方法确认。
+> [!WARNING]
+> **NOT FOR CLINICAL DIAGNOSIS.** v0.1 reports read-level k-mer evidence only.
+> Every positive is a *candidate* and has to be confirmed by an orthogonal method.
 
 ---
 
-## 快速开始
+## Introduction
 
-```bash
-bin/phamseek install                       # 一次性,不需要 root
-bin/phamseek doctor                        # 检查工具与数据库是否可用
+**nf-phamseek** takes basecalled Oxford Nanopore reads from plasma or cerebrospinal
+fluid, removes human sequence in two independent passes, and classifies what remains
+against a phage reference database. Each run produces one HTML report and one summary
+TSV, plus a TSV and a JSON per sample.
 
-bin/phamseek run \
-    --input samplesheet.csv \
-    --db_dir /path/to/phamseek_db \
-    --outdir results
+The pipeline is implemented in [Nextflow](https://www.nextflow.io) DSL2. Software comes
+from a single multi-arch container image (`linux/amd64` and `linux/arm64`) built from a
+committed [pixi.lock](pixi.lock), so the container, the pixi route and the offline bundle
+all resolve to the same solved environment.
+
+## Pipeline summary
+
+```mermaid
+flowchart TD
+    A["ONT reads"] --> B["chopper + nanoq<br/>length / quality filtering"]
+    B --> C["kraken2<br/>one pass over every read"]
+    C --> D{"classification"}
+    D -->|"Homo sapiens subtree"| E["deleted<br/>host depletion level 1"]
+    D -->|"Viruses subtree"| F["phage evidence"]
+    D -->|"everything else<br/>+ unclassified"| G["minimap2 vs CHM13<br/>host depletion level 2"]
+    F --> G
+    G --> H["host-free reads"]
+    C --> I["bracken<br/>off by default"]
+    F --> J["per-sample report<br/>TSV + JSON"]
+    I --> J
+    E --> J
+    G --> J
+    J --> L["run-level summary"]
+    L --> K["phamseek_report.html<br/>phamseek_summary.tsv"]
 ```
 
-报告落在 `results/summary/phamseek_report.html`。完整参数列表:`bin/phamseek run --help`。
+**kraken2 runs before host depletion on purpose.** One pass classifies every read, and
+that single pass produces both the taxonomic profile and the first pass of host removal
+at no extra cost: with a database that carries human decoy sequence, ~99.6% of human
+reads land in taxid 9606 within a second, leaving only a small remainder for the aligner.
 
-你不需要知道 phamseek 底层是一条 Nextflow 流程,正常情况下也不需要自己去调 `nextflow`。
+**Two levels, because one is not enough.** A kraken2 decoy only changes a read's *label*;
+it deletes nothing. Reads the database does not recognise flow straight into the output.
+Level 2 aligns everything level 1 left against T2T-CHM13v2 and keeps only reads with no
+alignment at all — so a read is deleted the moment it touches the host reference, rather
+than relabelled. Both levels report their own removal counts.
 
-### Samplesheet
+The two levels are redundant, and that is verifiable: with a decoy-carrying database
+level 1 removes 100% of host reads and level 2 finds nothing; with a decoy-free database
+level 1 removes 0% and level 2 removes 100%. Both paths give the same answer.
+
+## Quick start
+
+1. Install [Nextflow](https://www.nextflow.io/docs/latest/getstarted.html#installation)
+   (`>=23.10.0`) and one of [Apptainer](https://apptainer.org/), Docker or
+   [pixi](https://pixi.sh/).
+
+2. Check the wiring without touching a database or a tool:
+
+   ```bash
+   nextflow run rujinlong/nf-phamseek -profile test,nocontainer -stub --outdir stub_results
+   ```
+
+3. Run your own data:
+
+   ```bash
+   nextflow run rujinlong/nf-phamseek \
+       -profile apptainer \
+       --input samplesheet.csv \
+       --db_dir /path/to/phamseek_db \
+       --db_label inphared_decoy_2026-04 \
+       --outdir results
+   ```
+
+   `-resume` continues an interrupted run instead of restarting it.
+   `nextflow run rujinlong/nf-phamseek --help` prints every parameter with its default.
+
+The report lands in `results/summary/phamseek_report.html`.
+
+## Samplesheet
+
+A CSV with a header row:
 
 ```csv
 sample_id,fastq,platform,sample_type
 plasma_01,reads/plasma_01.fastq.gz,ont,sample
-csf_02,reads/csf_02.fastq.gz,ont,sample
+csf_02,/data/run17/csf_02.fastq.gz,ont,sample
 ntc_01,reads/ntc_01.fastq.gz,ont,ntc
 ```
 
-`fastq` 可以写绝对路径,也可以写相对于 samplesheet 自身目录的相对路径。`platform` 和
-`sample_type` 可省略(默认 `ont` 和 `sample`)。
+| Column | Required | Default | Notes |
+|---|---|---|---|
+| `sample_id` | yes | — | Unique, no whitespace. Becomes the output directory name. |
+| `fastq` | yes | — | Absolute, or relative to the samplesheet's own directory. `.fastq`/`.fq`, optionally `.gz`. |
+| `platform` | no | `ont` | Only `ont` is implemented in v0.1. |
+| `sample_type` | no | `sample` | One of `sample`, `ntc`, `positive_control`. |
 
-**只要有条件就放一个 no-template control。** 这类文库生物量极低,试剂污染是低丰度阳性的
-主要来源。给了 `ntc` 行之后,phamseek 会把同时出现在对照里的每个 taxon 打上标记,并把已经
-过线的那些下调判定等级。它不做对照扣减 —— 见 [docs/output.md](docs/output.md)。
+Every row is validated before the pipeline starts: existence, readability, non-zero size,
+plausible extension, and the gzip magic number for `.gz` files.
 
----
+**Include a no-template control whenever you can.** These libraries are extremely low
+biomass, and reagent contamination is the dominant source of low-abundance positives.
+Given an `ntc` row, phamseek flags every taxon that also appears in the control and
+downgrades those that had passed the reporting floor. It does not subtract the control —
+see [docs/output.md](docs/output.md).
 
-## 它做了什么
+## Reference databases
 
-```mermaid
-flowchart TD
-    A["ONT reads"] --> B["chopper + nanoq<br/>长度 / 质量过滤"]
-    B --> C["kraken2<br/>对每条 read 只跑一遍"]
-    C --> D{"分类归属"}
-    D -->|"Homo sapiens 子树"| E["删除<br/>第一级去宿主"]
-    D -->|"Viruses 子树"| F["噬菌体证据"]
-    D -->|"其余全部<br/>+ unclassified"| G["minimap2 比对 CHM13<br/>第二级去宿主"]
-    F --> G
-    G --> H["无宿主 reads"]
-    C --> I["bracken<br/>默认关闭"]
-    F --> J["单样本报告<br/>TSV + JSON"]
-    I --> J
-    E --> J
-    G --> J
-    J --> L["运行级汇总"]
-    L --> K["phamseek_report.html<br/>phamseek_summary.tsv"]
+Databases live **outside** this repository, outside the container image, and are never
+copied into the work directory. `--db_dir` expects:
+
+```
+<db_dir>/kraken2/    kraken2 database (hash.k2d, opts.k2d, taxo.k2d)
+<db_dir>/host/       host reference for level 2 (.mmi, or FASTA)
 ```
 
-**kraken2 跑在去宿主之前是刻意的。** 一遍分类把每条 read 都过完,这一遍既生成分类谱,又
-顺带完成第一级去宿主,不额外花代价:当数据库带人源 decoy 序列时,约 99.6% 的人源 reads
-会在一秒内落进 taxid 9606,留给比对器的工作量只剩一小部分。
+`--kraken2_db` and `--host_index` override either one individually.
 
-**做两级,是因为一级不够。** kraken2 的 decoy 只改变 read 的「标签」,它不删掉任何东西。
-数据库认不出来的 reads 照样会流进最终输出。第二级把第一级留下的所有 reads 比对
-T2T-CHM13v2,只保留完全没有比对上的 —— 于是一条 read 只要碰到宿主参考就被删除,而不是
-被换个标签。两级各自的去除数都写进报告。
+The choice of kraken2 database matters more than anything else in the pipeline. What
+matters is **whether it covers the target niche**, not how large or how fast it is:
+between a 0.9 GB and an 11 GB database, classification time differs by ~14% while
+detection of novel sequence differs 65-fold. The only hard constraint is memory, which
+must exceed the database size — kraken2 loads it whole.
 
-两级互为冗余,而且这一点可以验证:用带 decoy 的库,第一级去掉 100% 的宿主 reads、第二级
-什么也找不到;用不带 decoy 的库,第一级去掉 0%、第二级去掉 100%。两条路径给出同一个答案。
+Use a database that carries non-phage **decoy** sequence (bacteria, plasmids, human). It
+drops the plasmid false-positive rate from 37.4% to 0.4% or below, and level-1 host
+depletion only works because of it.
 
----
+You do not have to declare this. `--db_has_decoy auto` (the default) reads the database's
+own taxonomy with `kraken2-inspect`, reports the human, bacterial and plasmid decoy
+classes separately, and lets the report's false-positive wording follow what the database
+actually contains. `true` or `false` override it; a declaration that contradicts the
+database is stated as such rather than being reasoned from.
 
-## 它刻意不做什么
+> Detection reads the **database**, never a sample's kraken2 report. A report lists only
+> taxa that received reads, so a decoy-carrying database analysing a sample with no human
+> reads shows no human node at all — inferring database content from a report gets it
+> exactly backwards on the samples where host depletion worked best.
 
-| v0.1 不做 | 为什么 |
+The `.mmi` host index must be built with the same minimap2 preset used for mapping
+(`map-ont`); minimap2 silently honours the parameters stored in the index over those
+given on the command line.
+
+## Profiles
+
+| Profile | Software comes from |
 |---|---|
-| 组装、geNomad、CheckV(`--mode full`) | 目标样本是低生物量的血浆和脑脊液,覆盖度通常撑不起组装。已验证的路线是 kraken2 先出线索、再做靶向 mapping。`--mode full` 直接报错并解释,而不是跑一条半成品路径。 |
-| Illumina / paired-end 输入 | QC 步骤、minimap2 preset、单端 kraken2 调用全都是长读专用的。Illumina 数据跑出来的数字看着合理,其实不成立。 |
-| 拆分嵌合 read | ONT cDNA 文库会产生 concatemer。v0.1 只「测量」由此产生的信号并报告出来,不拆分 reads。 |
-| NTC 扣减 | 要定一条扣减规则需要重复对照,这次 pilot 没有。phamseek 改为打标记。 |
-| 检出限标定 | 需要在真实检测体系上做梯度稀释。 |
+| *(none)* | **Apptainer** — the default. Pulls `docker.io/jinlongru/nf-phamseek:v0.1.0`. |
+| `apptainer` | The same thing, stated explicitly. |
+| `docker` | Docker, same image, running as your own uid/gid. |
+| `singularity`, `podman` | Same image, other engines. |
+| `pixi` | The locked conda environment in `.pixi/`, activated per task. Run `pixi install --frozen` first. |
+| `nocontainer` | Whatever is already on `PATH` — a pre-activated shell, an HPC module system, or the offline bundle. |
+| `test` | The ~1.2 MB of simulated ONT reads in [test/](test/). Combine it with one of the above. |
+| `slurm` | Submits to Slurm instead of running locally. |
 
----
+Nextflow has no native pixi support: the `process.pixi` directive was proposed in
+[nextflow-io/nextflow#6157](https://github.com/nextflow-io/nextflow/pull/6157), closed in
+favour of a general `package` directive in
+[#6342](https://github.com/nextflow-io/nextflow/pull/6342), and that was closed too in
+February 2026. `-profile pixi` therefore activates the environment through
+`beforeScript` + `pixi shell-hook`, which is also what picks up `LD_LIBRARY_PATH` and the
+other activation variables that prepending `bin/` to `PATH` would miss.
 
-## 参考数据库
+Air-gapped installations have three further routes — a pixi-pack bundle, a self-contained
+Apptainer image, and a preflight check that picks between them. See
+[deploy/INSTALL.md](deploy/INSTALL.md).
 
-数据库永远在本仓库之外,也永远不会被拷进 work 目录。`--db_dir` 期望的布局:
+## Reading the results
 
-```
-<db_dir>/kraken2/    kraken2 数据库(hash.k2d、opts.k2d、taxo.k2d)
-<db_dir>/host/       第二级用的宿主参考(.mmi,或 FASTA)
-```
+Read [docs/output.md](docs/output.md) before reading a report. The four boundary
+conditions most easily missed:
 
-kraken2 数据库的选择对整条流程影响最大。关键在于**它覆盖不覆盖目标生态位**,而不是它多大、
-多快:0.9 GB 库和 11 GB 库之间,分类耗时只差约 14%,而对新颖序列的检出率相差 65 倍。真正的
-硬约束只有内存,必须大于数据库体积 —— kraken2 是整库载入的。
+- **A negative result does not exclude phage.** Recall depends on whether the reference
+  database holds a ≥80% ANI neighbour: ~96% when it does, ~50% when it does not.
+- **Plasmids and ICE/IME are the dominant false-positive source**, and raising
+  `--kraken2_confidence` will not fix it. The signal is real shared homology (integrase,
+  relaxase modules), not stray k-mers. The fix is decoy sequence in the database.
+- **RPM is normalised over non-host reads.** That is the right denominator when human
+  sequence dominates, but it inflates without bound once few non-host reads remain.
+  Always read RPM next to `nonhost_denominator`, which comes from the read count after
+  level 1 and does not subtract what level 2 removed afterwards.
+- **Reads are not independent molecules.** These libraries were pre-amplified.
 
-强烈推荐用带非噬菌体 **decoy** 序列(细菌、质粒、人)的库。它把质粒假阳性从 37.4% 压到
-0.4% 或更低,第一级去宿主也是靠它才能工作。
+### Why `--kraken2_confidence` defaults to 0.02
 
-这一点不需要你手动声明。`--db_has_decoy auto`(默认)用 `kraken2-inspect` 读数据库自身的
-taxonomy,分别报告人源、细菌、质粒三类 decoy,让报告里的假阳性提示跟着数据库的真实内容走。
-传 `true` 或 `false` 可以覆盖。覆盖值与数据库矛盾时 —— 声明 `false` 却检出了任一类 decoy,
-或声明 `true` 却三类一个都没检出 —— 报告会明说,而不是从错误前提往下推。
+![kraken2 on simulated ONT cDNA reads](docs/images/ont_pilot.png)
 
-> 检测读的是**数据库**,绝不是某个样本的 kraken2 report。report 只列出拿到 reads 的 taxa,
-> 所以一个带 decoy 的库在分析一个没有人源 reads 的样本时,report 里根本不会出现人源节点 ——
-> 从 report 反推数据库内容,恰好会在去宿主最成功的那些样本上判错。
+*Left: raising confidence from 0.02 to 0.10 on ONT reads costs 15 points of recall at 95%
+read identity and 29 points at 87% — against 3.5 points on 150 bp Illumina reads. The
+short-read instinct to "tighten this threshold" does not transfer. Right: a cross-domain
+chimeric read is assigned to whichever segment carries more k-mers, so even at a 30%
+chimera rate only 0.70% of reads reach root — which is why the report labels the chimera
+diagnostic a non-specific signal rather than a chimera rate.*
 
-`.mmi` 宿主索引必须用与 mapping 时相同的 minimap2 preset(`map-ont`)构建;minimap2 会
-静默地采用索引里的参数而不是命令行给的参数。
+Same-domain chimeric reads are classified *better* than pure reads (92.7% vs 79.3%)
+because they are longer. The overall "percent viral" therefore barely moves while the
+composition underneath it has already changed — an effect visible only once reads are
+stratified by their true origin.
 
----
+These methods and numbers come from an in-silico benchmark of kraken2-based phage
+detection; the simulation script is `p0126-kraken2phage/scripts/ont_pilot.sh`.
 
-## 怎么读结果
+## What v0.1 deliberately does not do
 
-读报告之前先读 [docs/output.md](docs/output.md)。最容易被漏掉的四个边界条件:
+| Not in v0.1 | Why |
+|---|---|
+| Assembly, geNomad, CheckV (`--mode full`) | The target samples are low-biomass plasma and CSF, where coverage rarely supports assembly. The validated route is kraken2 lead detection followed by targeted mapping. `--mode full` fails with that explanation rather than running a half path. |
+| Illumina / paired-end input | The QC steps, the minimap2 preset and the single-end kraken2 call are all long-read specific. Illumina data would produce numbers that look valid and are not. |
+| Splitting chimeric reads | ONT cDNA libraries produce concatemers. v0.1 measures and reports the resulting signal; it does not split reads. |
+| NTC subtraction | Defining a subtraction rule needs replicate controls, which this pilot did not have. phamseek flags instead. |
+| Limit-of-detection calibration | Needs a dilution series on the real assay. |
 
-- **阴性结果不能排除噬菌体。** recall 取决于参考库里有没有近邻(≥80% ANI):有近邻时约 96%,
-  没有时约 50%。
-- **质粒与 ICE/IME 是假阳性的主要来源**,而且调高 `--kraken2_confidence` 解决不了。这个信号
-  是真实的共享同源性(integrase、relaxase 模块),不是杂散 k-mer。解法是往库里加 decoy 序列。
-- **RPM 是对非宿主 reads 归一化的**,这对人源占绝对主导的样本是正确做法,但当剩下的非宿主
-  reads 很少时 RPM 会无上界地虚高。读 RPM 时必须同时看 `nonhost_denominator`。这个分母来自
-  第一级(kraken2)之后的 reads 数,不扣除第二级比对再删掉的部分。
-- **read 数不是独立分子数。** 这些文库都做过预扩增。
+## Requirements
 
-### 为什么 `--kraken2_confidence` 默认取 0.02
+- Linux, x86-64 or arm64
+- Nextflow `>=23.10.0`
+- Apptainer, Docker, or [pixi](https://pixi.sh) (a single static binary; needs no root and
+  does not touch an existing conda installation)
+- RAM greater than the kraken2 database size (~12 GB for an 11 GB database)
+- No network access at run time once the image and the Nextflow plugins are cached
 
-![kraken2 在模拟 ONT cDNA reads 上的表现](docs/images/ont_pilot.png)
-
-*左:在 ONT reads 上把 confidence 从 0.02 提到 0.10,read identity 为 95% 时 recall 掉 15 个
-百分点、87% 时掉 29 个百分点 —— 而在 150 bp Illumina reads 上只掉 3.5 个百分点。短读数据上
-「把这个阈值调紧」的做法不适用于这里。右:跨域嵌合 read 会被判给携带 k-mer 更多的那一段,
-所以即便嵌合率高达 30%,也只有 0.70% 落到 root —— 这正是报告里的嵌合诊断被标注为非特异信号、
-而不是嵌合率的原因。*
-
-同域嵌合 read 的分类结果反而比纯 read 更好(92.7% vs 79.3%),因为它们更长。于是总体的
-「病毒占比」几乎不动,底下的组成却已经变了 —— 只有把 reads 按真实来源分层才看得见这个效应。
-
-这些方法和数字来自一项基于 kraken2 的噬菌体 in-silico 检测 benchmark,对应的模拟脚本见
-`p0126-kraken2phage/scripts/ont_pilot.sh`。
-
----
-
-## 文档
-
-- [docs/usage.md](docs/usage.md) —— 常用参数、samplesheet 规则、实操示例
-- [docs/output.md](docs/output.md) —— 输出布局、每一列的含义、怎么读一条判定
-- [deploy/INSTALL.md](deploy/INSTALL.md) —— 安装,含离线主机
-
-## 运行要求
-
-- Linux,x86-64 或 arm64
-- [pixi](https://pixi.sh)(单个静态二进制;不需要 root,也不碰已有的 conda 安装)
-- 内存大于 kraken2 数据库体积(11 GB 的库约需 12 GB)
-- 环境和 Nextflow 插件缓存好之后,运行期不需要联网
-
-## 开发
+## Development
 
 ```bash
-nextflow run . -profile test,no_pixi -stub --outdir /tmp/phamseek_stub   # 只走接线
-nextflow run . -profile test --db_dir <db> --outdir /tmp/phamseek_test   # 极小的真实运行
+# wiring only -- no database, no tools, no container
+nextflow run . -profile test,nocontainer -stub --outdir /tmp/phamseek_stub
+
+# a tiny real run
+nextflow run . -profile test,apptainer --db_dir <db> --outdir /tmp/phamseek_test
+
+# build the container image locally
+docker buildx build -f docker/Dockerfile -t jinlongru/nf-phamseek:dev .
 ```
 
-`test/` 里带了约 1.2 MB 模拟 ONT reads。它们来自一个刻意简化的模拟器
-([test/make_test_data.py](test/make_test_data.py)),用途是检验流程接线和对一个近邻噬菌体的
-检出。它们不是性能 benchmark。
+[test/](test/) ships ~1.2 MB of simulated ONT reads from a deliberately simplified
+simulator ([test/make_test_data.py](test/make_test_data.py)). They exercise the wiring and
+confirm that a near-neighbour phage is detected. They are not a performance benchmark.
 
-## 许可
+The image is built for `linux/amd64` and `linux/arm64` by
+[.github/workflows/docker.yml](.github/workflows/docker.yml) and published to Docker Hub
+as [`jinlongru/nf-phamseek`](https://hub.docker.com/r/jinlongru/nf-phamseek). A push to
+`main` publishes `:edge`; a `v*` tag publishes `:vX.Y.Z` and moves `:latest`.
 
-MIT —— 见 [LICENSE](LICENSE)。
+## Documentation
+
+- [docs/usage.md](docs/usage.md) — parameters, samplesheet rules, worked examples
+- [docs/output.md](docs/output.md) — output layout, every column, how to read a call
+- [deploy/INSTALL.md](deploy/INSTALL.md) — installation, including air-gapped hosts
+- [CITATIONS.md](CITATIONS.md) — the tools and reference data this pipeline depends on
+- [CHANGELOG.md](CHANGELOG.md)
+
+## Credits
+
+nf-phamseek was written by [Jinlong Ru](https://github.com/rujinlong).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

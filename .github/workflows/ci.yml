@@ -1,0 +1,105 @@
+name: CI
+
+# Wiring tests. Nothing here needs a reference database or a container: `-stub`
+# replaces every tool invocation with the module's stub block, so what is under
+# test is the channel topology, the samplesheet parser and the parameter
+# validation -- the parts that break silently.
+#
+# `-profile nocontainer` is what makes that cheap: it turns off the default Apptainer
+# provisioning, so the stub scripts (printf, touch, gzip) run straight on the
+# runner instead of pulling a 5 GB image to run `touch`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stub:
+    name: stub run (${{ matrix.NXF_VER }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor declared in the manifest, and the current release. The floor
+        # is tested because it is a promise: `nextflowVersion = '!>=23.10.0'`
+        # makes Nextflow refuse to run below it, and nothing else checks that
+        # the pipeline actually still works there.
+        NXF_VER: ["23.10.0", "latest-stable"]
+    env:
+      NXF_ANSI_LOG: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: nf-core/setup-nextflow@v2
+        with:
+          version: ${{ matrix.NXF_VER }}
+
+      - name: Stub run
+        run: |
+          nextflow run . -profile test,nocontainer -stub --outdir results_stub \
+              2>&1 | tee stub.log
+
+      # An exit code alone is not enough: Nextflow can complete with processes
+      # that never ran. Assert the two ends of the DAG are present.
+      - name: Every stage ran and the run-level report was produced
+        run: |
+          set -eu
+          for proc in ONT_QC KRAKEN2_READS HOST_SPLIT_L1 HOST_DEPLETION_L2 \
+                      DB_MANIFEST PHAMSEEK_REPORT PHAMSEEK_SUMMARY; do
+              grep -q "${proc}" stub.log || { echo "${proc} did not run"; exit 1; }
+          done
+          test -s results_stub/summary/phamseek_summary.tsv
+          test -s results_stub/summary/phamseek_report.html
+
+      - name: '--mode full is refused, with a reason'
+        run: |
+          if nextflow run . -profile test,nocontainer -stub --mode full \
+                 --outdir results_mode_full > mode_full.log 2>&1; then
+              echo "--mode full was accepted"; exit 1
+          fi
+          grep -q "not implemented in phamseek v0.1" mode_full.log || {
+              echo "rejected, but not for the expected reason"; cat mode_full.log; exit 1; }
+
+      - name: 'bracken without --bracken_read_length is refused'
+        run: |
+          if nextflow run . -profile test,nocontainer -stub --skip_bracken false \
+                 --outdir results_bracken > bracken.log 2>&1; then
+              echo "bracken was enabled without a read length"; exit 1
+          fi
+          grep -q "bracken_read_length is required" bracken.log || {
+              echo "rejected, but not for the expected reason"; cat bracken.log; exit 1; }
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stub-logs-${{ matrix.NXF_VER }}
+          path: |
+            *.log
+            .nextflow.log
+            results_stub/pipeline_info/
+          if-no-files-found: ignore
+
+  lint:
+    name: shellcheck + python syntax
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck the deployment scripts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning deploy/*.sh deploy/apptainer/*.sh
+
+      - name: compile the bin/ scripts
+        run: python3 -m compileall -q bin/

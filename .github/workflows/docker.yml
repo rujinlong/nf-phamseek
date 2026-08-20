@@ -1,0 +1,191 @@
+name: Docker
+
+# Build docker.io/jinlongru/nf-phamseek for linux/amd64 + linux/arm64 and publish
+# it to Docker Hub.
+#
+# Both architectures are built NATIVELY, each on its own GitHub-hosted runner,
+# and joined afterwards into one multi-arch manifest. The obvious alternative --
+# one runner with QEMU and `platforms: linux/amd64,linux/arm64` -- emulates every
+# conda package's post-link script, which turns a ~10 minute solve into hours and
+# occasionally miscompiles. Native runners for both are free on a public
+# repository, so there is nothing to trade off.
+#
+# The two build jobs push by DIGEST only (no tag). Tags are attached once, by the
+# `manifest` job, so a half-finished matrix can never leave `:latest` pointing at
+# a single architecture.
+#
+# Triggers
+#   push tag v*      -> :vX.Y.Z and :latest
+#   push to main     -> :edge          (only when something the image depends on changed)
+#   pull_request     -> build only, never push
+#   workflow_dispatch
+#
+# Secrets: DOCKER_USER, DOCKER_PASSWORD (a Docker Hub access token).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pixi.toml"
+      - "pixi.lock"
+      - "docker/Dockerfile"
+      - ".github/workflows/docker.yml"
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "pixi.toml"
+      - "pixi.lock"
+      - "docker/Dockerfile"
+      - ".github/workflows/docker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: docker.io/jinlongru/nf-phamseek
+
+jobs:
+  # pixi.lock is what makes every delivery route resolve to the same software.
+  # A lock nothing checks is a comment, so it is verified before anything is
+  # built from it.
+  #
+  # `--dry-run` is not optional: plain `pixi lock --check` exits non-zero on
+  # drift but REWRITES pixi.lock on its way out, which leaves the build running
+  # against a lock CI just silently repaired.
+  lock:
+    name: pixi.lock matches pixi.toml
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: prefix-dev/setup-pixi@v0
+        with:
+          pixi-version: v0.73.0
+          run-install: false
+
+      - run: pixi lock --check --dry-run
+
+  build:
+    name: build ${{ matrix.platform }}
+    needs: lock
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      # The unpacked environment is ~5 GB and the runner ships with an Android
+      # SDK and a .NET toolchain it will never use here.
+      - name: Reclaim disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/share/boost /usr/local/lib/node_modules \
+                      "${AGENT_TOOLSDIRECTORY:-/opt/hosted_tool_cache}" || true
+          docker system prune -af || true
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build (and push by digest)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: ${{ matrix.platform }}
+          # No `tags:` and no `push:` here on purpose -- see the header.
+          # push-by-digest is configured through `outputs`, and setting the
+          # `push:` input as well makes buildx receive two conflicting export
+          # definitions.
+          outputs: |
+            type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      # Digests travel to the manifest job as one file per architecture, so the
+      # two matrix legs never race on the same artifact name.
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p /tmp/digests
+          echo -n "${{ steps.build.outputs.digest }}" > "/tmp/digests/${{ matrix.arch }}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  manifest:
+    name: publish multi-arch manifest
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # A version tag publishes :vX.Y.Z and moves :latest. Anything else
+      # publishes :edge, which is explicitly the untested tip -- `-profile
+      # apptainer` pins a version tag, never :latest, so a push to main cannot
+      # change what a running analysis resolves to.
+      - name: Compute tags
+        id: tags
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              printf 'tags=-t %s:%s -t %s:latest\n' \
+                  "${IMAGE}" "${GITHUB_REF_NAME}" "${IMAGE}"          >> "${GITHUB_OUTPUT}"
+          else
+              printf 'tags=-t %s:edge\n' "${IMAGE}"                   >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Create and push the manifest list
+        working-directory: /tmp/digests
+        run: |
+          set -eu
+          ls -l
+          # shellcheck disable=SC2046
+          docker buildx imagetools create ${{ steps.tags.outputs.tags }} \
+              $(for f in *; do printf '%s@%s ' "${IMAGE}" "$(cat "$f")"; done)
+
+      - name: Show what was published
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then ref="${GITHUB_REF_NAME}"; else ref="edge"; fi
+          docker buildx imagetools inspect "${IMAGE}:${ref}"

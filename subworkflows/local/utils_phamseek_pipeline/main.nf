@@ -1,8 +1,8 @@
 //
 // Initialisation and completion for the phamseek pipeline.
 //
-// This replaces the nf-core `utils_*` subworkflows. phamseek ships a single
-// pixi environment rather than per-process containers, and has no e-mail or
+// This replaces the nf-core `utils_*` subworkflows. phamseek ships one image
+// for the whole pipeline rather than one per process, and has no e-mail or
 // chat notification surface, so most of that machinery was inert.
 //
 
@@ -30,7 +30,8 @@ workflow PIPELINE_INITIALISATION {
     }
 
     if (help) {
-        def cmd = "phamseek run --input samplesheet.csv --db_dir /path/to/phamseek_db --outdir results"
+        def cmd = "nextflow run rujinlong/nf-phamseek -profile apptainer " +
+                  "--input samplesheet.csv --db_dir /path/to/phamseek_db --outdir results"
         log.info phamseekLogo(monochrome_logs) + paramsHelp(cmd) + '\n' + samplesheetHelp() + '\n'
         System.exit(0)
     }

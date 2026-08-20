@@ -34,11 +34,12 @@ databases is not the way to do it.
 
 ## The delivery in one picture
 
-![Three install routes carry an identical software set from our lab to your workstation; reference databases travel separately and are mounted read-only at run time](figures/delivery-architecture.jpg)
+![Every install route carries an identical software set from our lab to your workstation; reference databases travel separately and are mounted read-only at run time](figures/delivery-architecture.jpg)
 
-*One solved dependency set ([pixi.lock](../pixi.lock)) produces all three install routes,
-so whichever route you take you get the same software down to the byte. Reference
-databases are deliberately outside all three: they are large, they version on their own
+*One solved dependency set ([pixi.lock](../pixi.lock)) produces every install route,
+so whichever route you take you get the same software down to the byte — the published
+container image ([docker/Dockerfile](../docker/Dockerfile)) installs that same lock.
+Reference databases are deliberately outside all of them: they are large, they version on their own
 schedule, and keeping them separate means a database update never requires reinstalling
 the pipeline.* **Note on the database row: v0.1 needs only the kraken2 index and a human
 index. The geNomad and CheckV databases shown there are reserved for v0.2 — you do not
@@ -65,7 +66,9 @@ If you want to decide by hand:
 ```mermaid
 flowchart TD
     A[Start] --> B{Does the workstation<br/>reach the internet?}
-    B -- "Yes, unfiltered" --> C[Route A<br/>pixi install]
+    B -- "Yes, unfiltered" --> Z{Is a container runtime<br/>installed?}
+    Z -- Yes --> Y[Route D<br/>published image]
+    Z -- No --> C[Route A<br/>pixi install]
     B -- "No, or through a<br/>filtering proxy" --> D{Is apptainer or<br/>singularity installed?}
     D -- Yes --> E{Do you prefer one<br/>immutable file?}
     E -- Yes --> F[Route C<br/>Apptainer image]
@@ -76,7 +79,9 @@ flowchart TD
     H -- Yes --> F
     H -- No --> I[Install]
     F --> I
+    Y --> I
 
+    style Y fill:#dcfce7,stroke:#16a34a
     style C fill:#dbeafe,stroke:#2563eb
     style G fill:#fef3c7,stroke:#d97706
     style F fill:#f3e8ff,stroke:#9333ea
@@ -86,14 +91,78 @@ A partially filtered network is worse than no network: the install starts, then 
 halfway through a download. **If the preflight reports anything other than all four
 sources reachable, treat the machine as offline and use route B or C.**
 
-| | Route A · pixi install | Route B · offline bundle | Route C · Apptainer image |
-|---|---|---|---|
-| Needs internet on the workstation | yes | no | no |
-| What we send you | nothing | one 1.2 GB archive | one 1.5 GB `.img` file |
-| Depends on the host glibc | yes (≥ 2.28) | yes (≥ 2.28) | **no** |
-| Needs a container runtime | no | no | yes |
-| Disk used | ~5 GB | ~5 GB | ~1.5 GB |
-| Easiest to update | yes | medium | medium |
+| | Route D · published image | Route A · pixi install | Route B · offline bundle | Route C · Apptainer image |
+|---|---|---|---|---|
+| Needs internet on the workstation | yes (once) | yes | no | no |
+| What we send you | nothing | nothing | one 1.2 GB archive | one 1.5 GB `.img` file |
+| Depends on the host glibc | **no** | yes (≥ 2.28) | yes (≥ 2.28) | **no** |
+| Needs a container runtime | yes | no | no | yes |
+| Disk used | ~1.6 GB | ~5 GB | ~5 GB | ~1.5 GB |
+| Easiest to update | **yes** | yes | medium | medium |
+
+Routes C and D are both Apptainer images and are easy to confuse. Route **C** is a
+self-contained `.img` that carries the pipeline source, Nextflow and the pre-fetched
+Nextflow plugins, and is run directly (`apptainer run phamseek.img --input ...`). It
+exists for machines that will never see the internet. Route **D** carries tools only;
+Nextflow runs on the host, fetches the pipeline itself, and pulls the image on first use.
+
+---
+
+## Route D — the published container image
+
+Best when the workstation reaches the internet and has Apptainer, Docker, Podman or
+Singularity. Nothing is installed except Nextflow: the image is pulled on first use and
+cached.
+
+### Prerequisites
+
+- Linux, x86_64 or aarch64 (the image is built natively for both)
+- Nextflow ≥ 23.10.0
+- Apptainer, Singularity, Docker or Podman
+- ~1.6 GB free disk for the cached image
+- No root, unless your container runtime requires it
+
+### Commands
+
+```bash
+# 1. Install Nextflow (a single self-installing launcher, no root).
+curl -s https://get.nextflow.io | bash
+sudo mv nextflow /usr/local/bin/     # or keep it in ~/bin and add that to PATH
+
+# 2. Confirm the pipeline and the image resolve. This pulls ~1.6 GB once.
+nextflow run rujinlong/nf-phamseek -profile test,apptainer -stub --outdir /tmp/phamseek_stub
+```
+
+`-profile apptainer` is the default and may be omitted; `-profile docker`, `-profile
+podman` and `-profile singularity` select the other engines. Every one of them uses the
+same image, `docker.io/jinlongru/nf-phamseek:v0.1.0`.
+
+### Where the image is cached
+
+Set `NXF_APPTAINER_CACHEDIR` (or `NXF_SINGULARITY_CACHEDIR`) to a directory on a disk
+with room, and to a **shared** one if several people on the machine will run the
+pipeline — otherwise each of them converts and stores their own 1.6 GB copy:
+
+```bash
+export NXF_APPTAINER_CACHEDIR=/data/containers
+```
+
+### Common failures
+
+| What you see | Why | Fix |
+|---|---|---|
+| `Failed to pull singularity image` | no network, or a registry-filtering proxy | Switch to route B or C. |
+| `command not found` inside a task | a host `PATH` leaked in and shadowed the image | Do not set `apptainer.runOptions` to include `--writable-tmpfs` plus a host bind over `/opt`. |
+| Results owned by `root` (Docker only) | the `-u` run option was overridden | `-profile docker` sets `-u $(id -u):$(id -g)`; a site config that replaces `docker.runOptions` drops it. |
+
+### Updating
+
+```bash
+nextflow pull rujinlong/nf-phamseek        # new pipeline revision
+```
+
+The image tag is pinned in `nextflow.config` and moves with the pipeline version, so a
+pipeline update brings its matching image with it. Nothing has to be updated by hand.
 
 ---
 
@@ -426,7 +495,8 @@ leaves your validated PlusPF workflow untouched, and it is what we recommend:
 kraken2 --db /data/databases/pluspf --report pluspf.report reads.fastq
 
 # phamseek, on the same reads
-phamseek --input samplesheet.csv --outdir results --db_dir /data/databases
+nextflow run rujinlong/nf-phamseek -profile apptainer \
+    --input samplesheet.csv --outdir results --db_dir /data/databases
 ```
 
 The two reports are joined on taxid. Where PlusPF says "unclassified" and phamseek names
@@ -473,18 +543,39 @@ Oxford Nanopore data is single-end. One row per sample:
 
 ```csv
 sample_id,fastq,platform,sample_type
-PAT001,/data/run01/PAT001.fastq.gz,ont,plasma
-PAT002,/data/run01/PAT002.fastq.gz,ont,csf
+PAT001,/data/run01/PAT001.fastq.gz,ont,sample
+PAT002,/data/run01/PAT002.fastq.gz,ont,sample
+NTC01,/data/run01/NTC01.fastq.gz,ont,ntc
 ```
 
-> **Assumption flagged.** The samplesheet columns above are our working assumption while
-> the workflow is being finalized. Check `nextflow_schema.json` in the delivered pipeline
-> for the authoritative column list before preparing a real sheet.
+`sample_type` is one of `sample`, `ntc` or `positive_control` — it selects how the report
+treats the row, not what the material was, so plasma and CSF are both `sample`. Anything
+else is rejected before the run starts. The authoritative column list is
+[nextflow_schema.json](../nextflow_schema.json); `docs/usage.md` explains each column.
 
-All paths must be local absolute paths. A `http:`, `ftp:` or `s3:` URI cannot be staged
-on an offline machine.
+Include a no-template control (`ntc`) whenever one exists. These libraries are low enough
+biomass that reagent contamination is the dominant source of low-abundance positives, and
+without a control there is nothing to compare a weak positive against.
+
+On an offline machine all paths must be local absolute paths: a `http:`, `ftp:` or `s3:`
+URI cannot be staged.
 
 ### The run
+
+Routes A and D run the pipeline the ordinary Nextflow way:
+
+```bash
+nextflow run rujinlong/nf-phamseek \
+    -profile apptainer \
+    --input /data/run01/samplesheet.csv \
+    --outdir /data/run01/results \
+    --db_dir /data/databases
+```
+
+Use `-profile pixi` instead of `-profile apptainer` if you took route A and have no
+container runtime.
+
+Route B ships a wrapper that activates the bundled environment first:
 
 ```bash
 source ~/phamseek/activate.sh
@@ -508,7 +599,7 @@ nextflow -c ~/phamseek/pipeline/deploy/offline.config \
          run ~/phamseek/pipeline/main.nf --input ... --outdir ... --db_dir ...
 ```
 
-Always give the pipeline as an **absolute local path**. `nextflow run rujinlong/phamseek`
+Always give the pipeline as an **absolute local path**. `nextflow run rujinlong/nf-phamseek`
 makes Nextflow resolve the name through GitHub, which cannot work offline.
 
 ---
