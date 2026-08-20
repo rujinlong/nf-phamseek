@@ -2,7 +2,7 @@ process BRACKEN {
     tag "$meta.id"
     label 'process_low'
 
-    publishDir "${params.outdir}/${meta.id}/kraken2", mode: 'copy', pattern: '*.bracken.*'
+    publishDir path: { "${params.outdir}/${meta.id}/kraken2" }, mode: 'copy', pattern: '*.bracken.*'
 
     input:
     tuple val(meta), path(kraken2_report)

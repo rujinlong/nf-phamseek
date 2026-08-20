@@ -31,12 +31,18 @@ jobs:
       fail-fast: false
       matrix:
         # The floor declared in the manifest, and the current release. The floor
-        # is tested because it is a promise: `nextflowVersion = '!>=23.10.0'`
+        # is tested because it is a promise: `nextflowVersion = '!>=24.04.0'`
         # makes Nextflow refuse to run below it, and nothing else checks that
-        # the pipeline actually still works there.
-        NXF_VER: ["23.10.0", "latest-stable"]
+        # the pipeline actually still works there. 24.04 is the floor because
+        # that is where `process.resourceLimits` appeared.
+        NXF_VER: ["24.04.0", "latest-stable"]
     env:
       NXF_ANSI_LOG: false
+      # Deliberately NOT set to v1. The strict parser is the default from
+      # Nextflow 26.04 on, and a developer with NXF_SYNTAX_PARSER=v1 exported in
+      # their shell sees none of the errors it raises -- which is exactly how the
+      # config reached CI with a `def` function in it that no current Nextflow
+      # will parse. CI is the only place that guarantee is checked.
     steps:
       - uses: actions/checkout@v4
 
@@ -70,9 +76,14 @@ jobs:
           grep -q "not implemented in phamseek v0.1" mode_full.log || {
               echo "rejected, but not for the expected reason"; cat mode_full.log; exit 1; }
 
+      # Through a params file, not `--skip_bracken false`: nf-validation sees the
+      # command line value as the String "false" and rejects it on type before
+      # the guard under test is ever reached, so the CLI form would pass this
+      # step for the wrong reason.
       - name: 'bracken without --bracken_read_length is refused'
         run: |
-          if nextflow run . -profile test,nocontainer -stub --skip_bracken false \
+          echo 'skip_bracken: false' > bracken_on.yml
+          if nextflow run . -profile test,nocontainer -stub -params-file bracken_on.yml \
                  --outdir results_bracken > bracken.log 2>&1; then
               echo "bracken was enabled without a read length"; exit 1
           fi

@@ -2,7 +2,7 @@ process ONT_QC {
     tag "$meta.id"
     label 'process_medium'
 
-    publishDir "${params.outdir}/${meta.id}/qc", mode: 'copy', pattern: '*.json'
+    publishDir path: { "${params.outdir}/${meta.id}/qc" }, mode: 'copy', pattern: '*.json'
 
     input:
     tuple val(meta), path(reads)

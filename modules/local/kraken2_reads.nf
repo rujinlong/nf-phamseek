@@ -9,7 +9,7 @@ process KRAKEN2_READS {
     // bottleneck (~42M reads/min once loaded).
     maxForks 1
 
-    publishDir "${params.outdir}/${meta.id}/kraken2", mode: 'copy', pattern: '*.report.txt'
+    publishDir path: { "${params.outdir}/${meta.id}/kraken2" }, mode: 'copy', pattern: '*.report.txt'
 
     input:
     tuple val(meta), path(reads)

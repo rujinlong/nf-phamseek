@@ -2,7 +2,7 @@ process HOST_SPLIT_L1 {
     tag "$meta.id"
     label 'process_medium'
 
-    publishDir "${params.outdir}/${meta.id}/qc", mode: 'copy', pattern: '*.{tsv,json}'
+    publishDir path: { "${params.outdir}/${meta.id}/qc" }, mode: 'copy', pattern: '*.{tsv,json}'
 
     input:
     tuple val(meta), path(reads), path(kraken2_output), path(kraken2_report)

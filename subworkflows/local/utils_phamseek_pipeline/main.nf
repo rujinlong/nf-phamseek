@@ -6,8 +6,6 @@
 // chat notification surface, so most of that machinery was inert.
 //
 
-import org.yaml.snakeyaml.Yaml
-
 include { validateParameters } from 'plugin/nf-validation'
 include { paramsHelp         } from 'plugin/nf-validation'
 include { paramsSummaryLog   } from 'plugin/nf-validation'
@@ -152,13 +150,8 @@ def validateMode() {
 def resolveDatabases() {
     def no_db = file("${projectDir}/assets/no_db")
 
-    def resolve = { explicit, subdir ->
-        def p = explicit ?: (params.db_dir ? "${params.db_dir}/${subdir}" : null)
-        return p ? file(p) : null
-    }
-
-    def kraken2 = descendIntoSingleDatabase(resolve(params.kraken2_db, 'kraken2'))
-    def host    = resolve(params.host_index, 'host')
+    def kraken2 = descendIntoSingleDatabase(resolveDbPath(params.kraken2_db, 'kraken2'))
+    def host    = resolveDbPath(params.host_index, 'host')
 
     if (workflow.stubRun) {
         return [kraken2: kraken2 ?: no_db, host: host ?: no_db]
@@ -214,6 +207,19 @@ def resolveDatabases() {
     }
 
     return [kraken2: kraken2, host: host ?: no_db]
+}
+
+//
+// An explicit --kraken2_db / --host_index wins; otherwise the standard layout
+// under --db_dir supplies it.
+//
+// A module-level function rather than a closure held in a local: the strict
+// script parser does not let a closure variable be called like a function
+// (`resolve(...)` fails with "`resolve` is not defined").
+//
+def resolveDbPath(explicit, subdir) {
+    def p = explicit ?: (params.db_dir ? "${params.db_dir}/${subdir}" : null)
+    return p ? file(p) : null
 }
 
 //
@@ -357,9 +363,11 @@ def validateSamplesheetRow(row, base, seen) {
         error("Sample '${sid}': expected a .fastq/.fq (optionally .gz) file, got ${fq.name}")
     }
     if (fq.name.endsWith('.gz')) {
-        def magic = new byte[2]
-        fq.newInputStream().withCloseable { it.read(magic) }
-        if (magic[0] != (byte) 0x1f || magic[1] != (byte) 0x8b) {
+        // Two single-byte reads rather than read(byte[2]): Nextflow's strict
+        // script parser has no array-creation syntax. InputStream.read()
+        // returns 0-255, or -1 at EOF, so a truncated file compares unequal too.
+        def magic = fq.newInputStream().withCloseable { stream -> [stream.read(), stream.read()] }
+        if (magic[0] != 0x1f || magic[1] != 0x8b) {
             error("Sample '${sid}': ${fq.name} ends in .gz but is not gzip-compressed (truncated or mislabelled?)")
         }
     }
@@ -392,7 +400,8 @@ def softwareVersionsToYAML(ch_versions) {
     return ch_versions
         .unique()
         .map { f ->
-            def yaml = new Yaml()
+            // Fully qualified: the strict script parser has no `import`.
+            def yaml = new org.yaml.snakeyaml.Yaml()
             def parsed = yaml.load(f.text).collectEntries { k, v -> [k.tokenize(':')[-1], v] }
             return yaml.dumpAsMap(parsed).trim()
         }

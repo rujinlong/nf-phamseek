@@ -118,6 +118,40 @@ deploy/offline.config    用 -c 叠加,关掉所有会联网的 Nextflow 功能
 必须同时改 `nextflow.config` 与 `nextflow_schema.json`**,否则 `validateParameters()` 会把它
 当成未知参数。
 
+### 严格 config/script parser(Nextflow ≥ 26.04 的默认)
+
+**⚠ 如果你的 shell 里有 `NXF_SYNTAX_PARSER=v1`,你看不到这一节说的任何错误。** 它强制回到
+旧解析器,本地全绿而 CI 全红 —— 本仓库就是这样带着一个当前 Nextflow 根本解析不了的
+`def check_max()` 通过了所有本地测试的。改配置或 `.nf` 之后,**至少跑一次
+`env -u NXF_SYNTAX_PARSER nextflow run . -profile test,nocontainer -stub`**。
+
+`nextflow.config` 里**不允许任何顶层 `def`**(变量或函数都不行),放在文件哪个位置都不行;
+报错是误导性的 `Variable declarations cannot be mixed with config statements`,而函数还会先报
+`Unexpected input: '('`。于是:
+
+- 需要跨 config scope 共享的值**只能走 `params` 命名空间**(`pipeline_version`、
+  `trace_timestamp` 就是这样,并在 schema 里标 `hidden`)。
+- `check_max()` 已经删除,改用 **`process.resourceLimits`**(Nextflow 24.04+,这也是
+  `nextflowVersion` floor 是 24.04 的原因)。它写成**闭包**而不是字面 map:字面 map 在
+  `profiles{}` 之前就求值完了,`-profile test` 把 `params.max_cpus` 改成 4 也顶不上去
+  —— 实测过,不是推测。
+- pixi 的 shell-hook 字符串直接内联在 `pixi` profile 里。
+
+`.nf` 脚本侧,严格 parser 另外禁掉了四样本仓库原本在用的东西:
+
+| 不允许 | 改成 |
+|---|---|
+| `import org.yaml.snakeyaml.Yaml` | 内联全限定名 `new org.yaml.snakeyaml.Yaml()` |
+| `new byte[2]` 之类数组构造 | 用 List(本仓库改成两次 `stream.read()`) |
+| `def f = { ... }` 之后 `f(...)` 调用 | 声明成 module-level function |
+| `publishDir "${params.outdir}/${meta.id}/..."` | `publishDir path: { "..." }`(闭包才惰性求值,否则 `No such variable: meta`) |
+
+### 布尔参数不能在命令行上关掉
+
+`--skip_bracken false` 会被 nf-validation 拒掉(`expected type: Boolean, found: String`)
+—— 命令行传进来的是字符串。默认 `true` 的开关只能经 `-params-file` 关闭。CI 的对应负例
+因此走 params 文件;直接用命令行形式会「通过」,但是因为错误的原因通过的。
+
 ### INV-NF-* 编号是外部索引
 
 源码注释里的 `INV-NF-01/02/03/04/05/18` 指向
@@ -126,8 +160,10 @@ deploy/offline.config    用 -c 叠加,关掉所有会联网的 Nextflow 功能
 
 - **01** `include` 只允许在文件顶层。
 - **02** `output:` 用精确文件名不用 glob;**例外**是 merge 步骤的 `input:` 可以用收集 glob。
-- **03** 配置的 `process{}` / `trace{}` / `report{}` / `timeline{}` / `dag{}` 块里不读 `params.X`,
-  改用文件级 `def`。这就是 `publishDir` 写在 module 里而不是 `conf/modules.config` 里的原因。
+- **03** 配置的 `process{}` / `trace{}` / `report{}` / `timeline{}` / `dag{}` 块里不读 `params.X`。
+  这就是 `publishDir` 写在 module 里而不是 `conf/modules.config` 里的原因。⚠ 它原文说的补救
+  「改用文件级 `def`」在严格 parser 下**已经不可行**(见上节),本仓库改用 `params` 命名空间
+  加惰性闭包。
 - **04** `params{}` 块内不自引用其他 `params.Y`(构造期未完成)。数据库路径因此在
   `resolveDatabases()` 里解析,不在 params 里拼。
 - **05** `check_max()` 只在 `conf/base.config` 调用。

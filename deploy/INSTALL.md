@@ -117,7 +117,7 @@ cached.
 ### Prerequisites
 
 - Linux, x86_64 or aarch64 (the image is built natively for both)
-- Nextflow ≥ 23.10.0
+- Nextflow ≥ 24.04.0
 - Apptainer, Singularity, Docker or Podman
 - ~1.6 GB free disk for the cached image
 - No root, unless your container runtime requires it

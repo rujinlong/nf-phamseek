@@ -2,7 +2,7 @@
 
 **Phage detection in low-biomass clinical Oxford Nanopore metagenomes.**
 
-[![Nextflow](https://img.shields.io/badge/nextflow%20DSL2-%E2%89%A523.10.0-23aa62.svg)](https://www.nextflow.io/)
+[![Nextflow](https://img.shields.io/badge/nextflow%20DSL2-%E2%89%A524.04.0-23aa62.svg)](https://www.nextflow.io/)
 [![run with apptainer](https://img.shields.io/badge/run%20with-apptainer-1d355c.svg)](https://apptainer.org/)
 [![run with docker](https://img.shields.io/badge/run%20with-docker-0db7ed?logo=docker)](https://www.docker.com/)
 [![run with pixi](https://img.shields.io/badge/run%20with-pixi-yellow.svg)](https://pixi.sh/)
@@ -67,7 +67,7 @@ level 1 removes 0% and level 2 removes 100%. Both paths give the same answer.
 ## Quick start
 
 1. Install [Nextflow](https://www.nextflow.io/docs/latest/getstarted.html#installation)
-   (`>=23.10.0`) and one of [Apptainer](https://apptainer.org/), Docker or
+   (`>=24.04.0`) and one of [Apptainer](https://apptainer.org/), Docker or
    [pixi](https://pixi.sh/).
 
 2. Check the wiring without touching a database or a tool:
@@ -229,7 +229,7 @@ detection; the simulation script is `p0126-kraken2phage/scripts/ont_pilot.sh`.
 ## Requirements
 
 - Linux, x86-64 or arm64
-- Nextflow `>=23.10.0`
+- Nextflow `>=24.04.0`
 - Apptainer, Docker, or [pixi](https://pixi.sh) (a single static binary; needs no root and
   does not touch an existing conda installation)
 - RAM greater than the kraken2 database size (~12 GB for an 11 GB database)

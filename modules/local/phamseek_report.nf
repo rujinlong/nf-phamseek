@@ -2,7 +2,7 @@ process PHAMSEEK_REPORT {
     tag "$meta.id"
     label 'process_single'
 
-    publishDir "${params.outdir}/${meta.id}/report", mode: 'copy', pattern: '*.phamseek.*'
+    publishDir path: { "${params.outdir}/${meta.id}/report" }, mode: 'copy', pattern: '*.phamseek.*'
 
     input:
     // INV-NF-18: `bracken` and `l2_stats` are both optional. They are given

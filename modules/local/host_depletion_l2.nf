@@ -2,8 +2,8 @@ process HOST_DEPLETION_L2 {
     tag "$meta.id"
     label 'process_high'
 
-    publishDir "${params.outdir}/${meta.id}/qc",         mode: 'copy', pattern: '*.tsv'
-    publishDir "${params.outdir}/${meta.id}/clean_reads", mode: 'copy', pattern: '*.clean.fastq.gz'
+    publishDir path: { "${params.outdir}/${meta.id}/qc" },         mode: 'copy', pattern: '*.tsv'
+    publishDir path: { "${params.outdir}/${meta.id}/clean_reads" }, mode: 'copy', pattern: '*.clean.fastq.gz'
 
     input:
     tuple val(meta), path(reads)
