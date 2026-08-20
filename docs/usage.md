@@ -101,17 +101,13 @@ bracken。要打开它,必须同时用 `--bracken_read_length` 给出本次运�
 即便打开了 bracken,它也需要 kraken2 数据库里有 `database<N>mers.kmer_distrib` 文件。这些文件
 缺失时 phamseek 会警告、跳过 bracken,并把这件事记进 `summary/database_manifest.tsv`。
 
-> ⚠ **打开它要用 params 文件,不能在命令行上写 `--skip_bracken false`**。命令行传进来的
-> `false` 是字符串,nf-validation 按 boolean 校验会直接拒绝(`expected type: Boolean, found:
-> String`)。默认值为 `true` 的开关都是这样。写一个 yml:
->
-> ```yaml
-> # bracken.yml
-> skip_bracken: false
-> bracken_read_length: 1400      # 填你自己 run 的中位读长
-> ```
->
-> 然后 `nextflow run ... -params-file bracken.yml`。
+打开它:
+
+```bash
+nextflow run rujinlong/nf-phamseek -profile apptainer \
+    --skip_bracken false --bracken_read_length 1400 \
+    --input samplesheet.csv --db_dir <db> --outdir results
+```
 
 ## 关键参数
 
@@ -124,7 +120,7 @@ bracken。要打开它,必须同时用 `--bracken_read_length` 给出本次运�
 | `--min_rpm` | `1.0` | 每百万**非宿主** reads。 |
 | `--chopper_min_quality` | `10` | 每条 read 的平均 Phred。 |
 | `--chopper_min_length` | `200` | 最短 read 长度。 |
-| `--skip_bracken` | `true` | bracken 默认关闭,原因见上。打开要经 `-params-file`(见上面的警告),且必须同时给 `--bracken_read_length`。 |
+| `--skip_bracken` | `true` | bracken 默认关闭,原因见上。设为 `false` 打开时必须同时给 `--bracken_read_length`。 |
 | `--bracken_read_length` | 无默认 | 只在 bracken 打开时使用,且此时必填。填本次运行的 read 长度中位数。 |
 | `--skip_host_removal` | 关 | 只跳过第二级。见下面的警告。 |
 | `--l2_input` | `all_nonhuman` | `nonhuman_nonviral` 会让病毒 reads 绕过比对器:略快,但一条被误判为病毒的人源 read 就此逃过去宿主。 |
@@ -173,7 +169,7 @@ kraken2 会把整个数据库载入内存,所以 phamseek 同一时刻最多跑�
 | `unable to find kraken2 in $KRAKEN2_DB_PATH` | 从你的 shell 配置继承来的 `KRAKEN2_DB_PATH`。phamseek 会 unset 它并传绝对路径;你看到这条,说明是在流程之外调用了 kraken2。 |
 | `kraken2 database ... is incomplete` | 目录里缺 `hash.k2d`、`opts.k2d` 或 `taxo.k2d`。 |
 | `No host reference (*.mmi or FASTA) found` | 去构建索引,或者传 `--skip_host_removal` 并接受上面写明的后果。 |
-| `--bracken_read_length is required when bracken is enabled` | 打开了 bracken(params 文件里 `skip_bracken: false`)却没给读长。用 nanoq 报的中位 read 长度填上,或者让 bracken 保持关闭。 |
+| `--bracken_read_length is required when bracken is enabled` | 打开了 bracken(`--skip_bracken false`)却没给读长。用 nanoq 报的中位 read 长度填上,或者让 bracken 保持关闭。 |
 | `expected 8 fields from the report join` | Nextflow 版本变动改变了 `join(remainder: true)` 的补位语义。流程会停下,而不是用可能错位的文件去拼报告。 |
 | `expected reports for N sample(s) but found M` | 有样本在分类和出报告之间掉了;汇总步骤拒绝产出一次残缺的运行。 |
 | `read order mismatch at record N` | kraken2 不再保持输入顺序,这会让流式的宿主拆分变得不安全。流程停止。 |

@@ -20,6 +20,8 @@ include { DB_MANIFEST            } from '../modules/local/db_manifest'
 include { PHAMSEEK_REPORT        } from '../modules/local/phamseek_report'
 include { PHAMSEEK_SUMMARY       } from '../modules/local/phamseek_summary'
 include { brackenAvailable       } from '../subworkflows/local/utils_phamseek_pipeline'
+include { skipBracken            } from '../subworkflows/local/utils_phamseek_pipeline'
+include { skipHostRemoval        } from '../subworkflows/local/utils_phamseek_pipeline'
 include { softwareVersionsToYAML } from '../subworkflows/local/utils_phamseek_pipeline'
 
 workflow PHAMSEEK {
@@ -68,7 +70,7 @@ workflow PHAMSEEK {
     // sequence the database did not recognise.
     //
     ch_l2_stats = Channel.empty()
-    if (!params.skip_host_removal) {
+    if (!skipHostRemoval()) {
         HOST_DEPLETION_L2( HOST_SPLIT_L1.out.reads, ch_host_index )
         ch_l2_stats = HOST_DEPLETION_L2.out.stats
         ch_versions = ch_versions.mix(HOST_DEPLETION_L2.out.versions.first())
@@ -84,7 +86,7 @@ workflow PHAMSEEK {
     // Bracken abundance re-estimation, when the database supports it.
     //
     ch_bracken = Channel.empty()
-    if (!params.skip_bracken && brackenAvailable()) {
+    if (!skipBracken() && brackenAvailable()) {
         BRACKEN( KRAKEN2_READS.out.report, ch_kraken2_db )
         ch_bracken  = BRACKEN.out.tsv
         ch_versions = ch_versions.mix(BRACKEN.out.versions.first())

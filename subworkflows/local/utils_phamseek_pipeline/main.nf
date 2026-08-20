@@ -130,7 +130,7 @@ def validateMode() {
     // which ONT violates by construction. Whoever turns it back on has to supply
     // the length themselves -- there is no defensible default across ONT runs, and
     // a silently wrong -r would produce plausible numbers rather than an error.
-    if (!params.skip_bracken && !params.bracken_read_length) {
+    if (!skipBracken() && !params.bracken_read_length) {
         error(
             "--bracken_read_length is required when bracken is enabled.\n" +
             "  Bracken re-estimates abundance from a k-mer distribution built for one\n" +
@@ -172,7 +172,7 @@ def resolveDatabases() {
         }
     }
 
-    if (!params.skip_host_removal) {
+    if (!skipHostRemoval()) {
         if (!host) {
             error(
                 "Host depletion is enabled but no host reference was given.\n" +
@@ -197,7 +197,7 @@ def resolveDatabases() {
     // Bracken needs per-read-length k-mer distributions built into the database.
     // Their absence is common and recoverable, so it downgrades to a warning and
     // the step is skipped, with the reason recorded in database_manifest.tsv.
-    if (!params.skip_bracken && !brackenAvailable()) {
+    if (!skipBracken() && !brackenAvailable()) {
         log.warn(
             "kraken2 database ${kraken2} has no bracken k-mer distributions " +
             "(database<N>mers.kmer_distrib), so bracken will be skipped and the report " +
@@ -207,6 +207,36 @@ def resolveDatabases() {
     }
 
     return [kraken2: kraken2, host: host ?: no_db]
+}
+
+//
+// Boolean parameters, read as real Booleans.
+//
+// Nextflow hands every command-line value to the pipeline as a String, and
+// validationLenientMode lets it past schema validation without converting it.
+// Groovy then reads the String "false" as TRUE, because a non-empty string is
+// truthy -- so `--skip_host_removal false` would silently SKIP level-2 host
+// depletion while the parameter summary prints "false", and `--skip_bracken
+// false` would silently leave bracken switched off. Both fail in the direction
+// that produces a plausible result rather than an error, which is why these are
+// never read through plain Groovy truth.
+//
+def asBool(name, value) {
+    if (value instanceof Boolean) {
+        return value
+    }
+    def s = value.toString().trim().toLowerCase()
+    if (s == 'true')  { return true }
+    if (s == 'false') { return false }
+    error("--${name} must be true or false; got '${value}'.")
+}
+
+def skipBracken() {
+    return asBool('skip_bracken', params.skip_bracken)
+}
+
+def skipHostRemoval() {
+    return asBool('skip_host_removal', params.skip_host_removal)
 }
 
 //

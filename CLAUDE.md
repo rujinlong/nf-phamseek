@@ -146,11 +146,21 @@ deploy/offline.config    用 -c 叠加,关掉所有会联网的 Nextflow 功能
 | `def f = { ... }` 之后 `f(...)` 调用 | 声明成 module-level function |
 | `publishDir "${params.outdir}/${meta.id}/..."` | `publishDir path: { "..." }`(闭包才惰性求值,否则 `No such variable: meta`) |
 
-### 布尔参数不能在命令行上关掉
+### 命令行传进来的值全是 String —— 两道防线缺一不可
 
-`--skip_bracken false` 会被 nf-validation 拒掉(`expected type: Boolean, found: String`)
-—— 命令行传进来的是字符串。默认 `true` 的开关只能经 `-params-file` 关闭。CI 的对应负例
-因此走 params 文件;直接用命令行形式会「通过」,但是因为错误的原因通过的。
+Nextflow 把命令行上的每个值都当 String 交给流程,于是:
+
+1. **schema 校验会拒掉一切数值与布尔参数** —— `--max_cpus 8`、`--min_reads 5`、
+   `--skip_bracken false` 全部报 `expected type: Integer, found: String`,等于命令行根本
+   设不了它们。所以 `validationLenientMode = true` 是**必需项不是偏好**:它把「能解析成
+   声明类型」的字符串放行,解析不了的(`--min_reads abc`)照样拒。
+2. **放行之后它仍然是 String,而 Groovy 认为非空字符串为真**。`!params.skip_host_removal`
+   在值是 `"false"` 时求值为 `false` —— 于是 `--skip_host_removal false` 会**静默跳过**
+   第二级去宿主,而参数摘要里明明印着 `false`。临床数据上这是本流程能犯的最严重的错误。
+
+所以布尔参数**一律经 `skipBracken()` / `skipHostRemoval()` 读**(定义在
+`subworkflows/local/utils_phamseek_pipeline/main.nf`,底层是 `asBool()`),
+**绝不要写 `if (!params.skip_*)`**。新增布尔参数时照此加一个访问函数。
 
 ### INV-NF-* 编号是外部索引
 

@@ -9,10 +9,14 @@ name: CI
 # provisioning, so the stub scripts (printf, touch, gzip) run straight on the
 # runner instead of pulling a 5 GB image to run `touch`.
 
+# MANUAL ONLY, on request (2026-08-20). The automatic push/pull_request triggers
+# were removed while the delivery was being cut, so a red badge on a test harness
+# could not be mistaken for a broken pipeline. Nothing here gates a release.
+# Re-enable by restoring:
+#   push:
+#     branches: [main]
+#   pull_request:
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -50,10 +54,22 @@ jobs:
         with:
           version: ${{ matrix.NXF_VER }}
 
+      # --max_memory / --max_cpus are NOT cosmetic here. conf/test.config asks for
+      # 16 GB so that `-profile test` with a real kraken2 database can actually
+      # load one; a GitHub runner has 15.6 GB, and Nextflow refuses to schedule a
+      # task whose request exceeds physical memory ("Process requirement exceeds
+      # available memory"). The stub tasks need no memory at all.
+      #
+      # `set -o pipefail` is load-bearing: `nextflow ... | tee` reports tee's exit
+      # status, so without it a failed run left this step green and only the next
+      # step noticed -- which is how the failure above was reported against the
+      # wrong process.
       - name: Stub run
         run: |
-          nextflow run . -profile test,nocontainer -stub --outdir results_stub \
-              2>&1 | tee stub.log
+          set -o pipefail
+          nextflow run . -profile test,nocontainer -stub \
+              --max_memory 6.GB --max_cpus 2 \
+              --outdir results_stub 2>&1 | tee stub.log
 
       # An exit code alone is not enough: Nextflow can complete with processes
       # that never ran. Assert against the execution trace, not the console log
@@ -76,25 +92,42 @@ jobs:
       - name: '--mode full is refused, with a reason'
         run: |
           if nextflow run . -profile test,nocontainer -stub --mode full \
+                 --max_memory 6.GB --max_cpus 2 \
                  --outdir results_mode_full > mode_full.log 2>&1; then
               echo "--mode full was accepted"; exit 1
           fi
           grep -q "not implemented in phamseek v0.1" mode_full.log || {
               echo "rejected, but not for the expected reason"; cat mode_full.log; exit 1; }
 
-      # Through a params file, not `--skip_bracken false`: nf-validation sees the
-      # command line value as the String "false" and rejects it on type before
-      # the guard under test is ever reached, so the CLI form would pass this
-      # step for the wrong reason.
+      # The command-line form on purpose: it is what a user types, and it only
+      # reaches the guard because validationLenientMode coerces the String and
+      # skipBracken() converts it. Both of those have silently regressed before.
       - name: 'bracken without --bracken_read_length is refused'
         run: |
-          echo 'skip_bracken: false' > bracken_on.yml
-          if nextflow run . -profile test,nocontainer -stub -params-file bracken_on.yml \
+          if nextflow run . -profile test,nocontainer -stub --skip_bracken false \
+                 --max_memory 6.GB --max_cpus 2 \
                  --outdir results_bracken > bracken.log 2>&1; then
               echo "bracken was enabled without a read length"; exit 1
           fi
           grep -q "bracken_read_length is required" bracken.log || {
               echo "rejected, but not for the expected reason"; cat bracken.log; exit 1; }
+
+      # `--skip_host_removal false` must LEAVE level 2 running. It silently
+      # skipped it before skipBracken()/skipHostRemoval() existed, because
+      # Groovy reads the String "false" as true. A silent skip of host depletion
+      # on clinical data is the worst failure this pipeline can have.
+      - name: 'a boolean passed as false is honoured, not read as truthy'
+        run: |
+          set -eu
+          nextflow run . -profile test,nocontainer -stub --skip_host_removal false \
+              --max_memory 6.GB --max_cpus 2 --outdir results_l2on > l2on.log 2>&1
+          grep -q "PHAMSEEK:HOST_DEPLETION_L2" results_l2on/pipeline_info/execution_trace_*.txt || {
+              echo "--skip_host_removal false silently skipped level-2 host depletion"; exit 1; }
+          nextflow run . -profile test,nocontainer -stub --skip_host_removal true \
+              --max_memory 6.GB --max_cpus 2 --outdir results_l2off > l2off.log 2>&1
+          grep -q "PHAMSEEK:HOST_DEPLETION_L2" results_l2off/pipeline_info/execution_trace_*.txt && {
+              echo "--skip_host_removal true still ran level-2 host depletion"; exit 1; }
+          true
 
       - name: Upload logs on failure
         if: failure()
