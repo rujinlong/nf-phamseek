@@ -294,17 +294,6 @@
                     "description": "Show hidden parameters in --help.",
                     "fa_icon": "far fa-eye-slash",
                     "hidden": true
-                },
-                "pipeline_version": {
-                    "type": "string",
-                    "description": "Pipeline version. Not user-settable.",
-                    "help_text": "Feeds both manifest.version and the container tag so the two cannot disagree. It lives in params because Nextflow's strict config parser allows no top-level `def`, making params the only namespace a value can cross config scopes through.",
-                    "hidden": true
-                },
-                "trace_timestamp": {
-                    "type": "string",
-                    "description": "Timestamp shared by this run's four execution reports. Not user-settable.",
-                    "hidden": true
                 }
             }
         }
