@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.2.1
+
+Housekeeping. No result changes, and the container image is the one v0.2.0
+published — the two tags resolve to the same digest.
 
 - **A release that does not change the image no longer rebuilds it.** The image is a
   function of exactly two files, `pixi.lock` and `docker/Dockerfile`. A `probe` job now

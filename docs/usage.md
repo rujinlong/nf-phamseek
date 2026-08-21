@@ -13,7 +13,7 @@ Pick the software source with `-profile`:
 
 | profile | software comes from | prerequisite |
 |---|---|---|
-| *(none)* / `apptainer` | **the default**. Multi-arch image `docker.io/jinlongru/nf-phamseek:v0.2.0` | apptainer installed |
+| *(none)* / `apptainer` | **the default**. Multi-arch image `docker.io/jinlongru/nf-phamseek`, at the tag matching the pipeline version | apptainer installed |
 | `docker` | the same image | docker installed |
 | `singularity`, `podman` | the same image | that engine installed |
 | `pixi` | the locked conda environment in the repository's `.pixi/` | run `pixi install --frozen` once |

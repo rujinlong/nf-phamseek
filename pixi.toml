@@ -1,6 +1,6 @@
 [workspace]
 name = "phamseek"
-version = "0.2.0"
+version = "0.2.1"
 description = "Phage detection in low-biomass clinical ONT metagenomes"
 authors = ["Jinlong Ru <jinlong.ru@tum.de>"]
 channels = ["conda-forge", "bioconda"]

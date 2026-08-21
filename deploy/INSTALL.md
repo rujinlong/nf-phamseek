@@ -141,7 +141,7 @@ nextflow run rujinlong/nf-phamseek -profile test,apptainer \
 
 `-profile apptainer` is the default and may be omitted; `-profile docker`, `-profile
 podman` and `-profile singularity` select the other engines. Every one of them uses the
-same image, `docker.io/jinlongru/nf-phamseek:v0.2.0`.
+same image, `docker.io/jinlongru/nf-phamseek`, at the tag matching the pipeline version.
 
 ### Where the image is cached
 

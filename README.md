@@ -217,7 +217,7 @@ given on the command line.
 
 | Profile | Software comes from |
 |---|---|
-| *(none)* | **Apptainer** — the default. Pulls `docker.io/jinlongru/nf-phamseek:v0.2.0`. |
+| *(none)* | **Apptainer** — the default. Pulls `docker.io/jinlongru/nf-phamseek` at the tag matching the pipeline version. |
 | `apptainer` | The same thing, stated explicitly. |
 | `docker` | Docker, same image, running as your own uid/gid. |
 | `singularity`, `podman` | Same image, other engines. |
