@@ -30,6 +30,12 @@ all resolve to the same solved environment.
 
 ## Pipeline summary
 
+![Five stages from nanopore reads to results, with the size of every reference database and of the container image](docs/images/pipeline_overview.jpg)
+
+*Reference data dominates the footprint — 16 GB on disk against a 1.6 GB image — which is why
+it lives outside the container and versions on its own schedule. kraken2 sits ahead of host
+depletion so a single pass yields both the taxonomic profile and the first level of removal.*
+
 ```mermaid
 flowchart TD
     A["ONT reads"] --> B["chopper + nanoq<br/>length / quality filtering"]
