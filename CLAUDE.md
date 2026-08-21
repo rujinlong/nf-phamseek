@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 这是什么
 
 `rujinlong/nf-phamseek` —— 一条 Nextflow DSL2 流程,在低生物量临床样本(血浆 / 脑脊液)的
-Oxford Nanopore 宏基因组里检出噬菌体。**v0.1 只做 read 级(Tier 1)**:QC → kraken2 →
-两级去宿主 → 报告。组装层(flye / geNomad / CheckV)**刻意不接线**,`--mode full` 直接带解释报错。
+Oxford Nanopore 宏基因组里检出噬菌体。**只做 read 级(Tier 1)**:QC → kraken2 →
+两级去宿主 → Krona 图 → 报告。组装层(flye / geNomad / CheckV)**刻意不接线**,
+`--mode full` 直接带解释报错。
 
 所有输出都带 `NOT FOR CLINICAL DIAGNOSIS`。改动报告措辞时不要弱化它。
 
@@ -15,14 +16,13 @@ Oxford Nanopore 宏基因组里检出噬菌体。**v0.1 只做 read 级(Tier 1)*
 | 位置 | 语言 |
 |---|---|
 | 源码、注释、日志与错误信息、`README.md`、`docs/**`、`deploy/**` | 英文 |
-| `CHANGELOG.md`、`CITATIONS.md` | 简体中文(专业名词保留英文)—— 尚未转换,见下 |
+| `CHANGELOG.md`、`CITATIONS.md` | 英文 |
 | 本文件(AI context) | 简体中文 |
 
-**仓库对外的一切都是英文**(2026-08-21 起:`docs/` 原为中文,已随仓库公开而全部转英文)。
-唯一的例外是本文件 —— 它是给 AI 助手的 context,不是交付物。
+**仓库对外的一切都是英文。** 唯一的例外是本文件 —— 它是给 AI 助手的 context,不是交付物。
 
-⚠ `CHANGELOG.md` 与 `CITATIONS.md` **仍是中文**,与其余部分不一致。这是待办,不是约定;
-碰到它们时顺手转英文,别反过来把英文改回中文。
+⚠ 一个残余的不一致:`deploy/MAINTAINERS.md` 仍是中文,与「`deploy/**` 用英文」这条不符。
+碰到它时顺手转英文,别反过来把英文改回中文。
 
 ## 常用命令
 
@@ -41,6 +41,10 @@ nextflow config . -profile test,docker
 
 # 构建容器镜像(context 必须是仓库根)
 docker buildx build -f docker/Dockerfile -t jinlongru/nf-phamseek:dev .
+
+# --help(唯一会执行 phamseekHelp() 的路径;改 schema 后必跑)
+env -u NXF_SYNTAX_PARSER nextflow run . --help
+env -u NXF_SYNTAX_PARSER nextflow run . --help kraken2_confidence
 
 # lint(与 CI 的 lint job 等价)
 shellcheck -S warning deploy/*.sh deploy/apptainer/*.sh
@@ -83,7 +87,7 @@ samplesheet ──▶ PIPELINE_INITIALISATION ──▶ PHAMSEEK ──▶ PIPEL
                 (校验 + 解析数据库)          (workflows/phamseek.nf)
 ```
 
-`workflows/phamseek.nf` 是唯一的编排层,7 个 `modules/local/*.nf` 都是 local module
+`workflows/phamseek.nf` 是唯一的编排层,9 个 `modules/local/*.nf` 都是 local module
 (没有 nf-core module,没有 `modules.json`)。
 
 **顺序上唯一反直觉的一点:kraken2 跑在去宿主之前**。一遍分类同时产出分类谱和第一级去宿主,
@@ -96,7 +100,15 @@ samplesheet ──▶ PIPELINE_INITIALISATION ──▶ PHAMSEEK ──▶ PIPEL
   数据库不认识的人源 read 只有这一级能删掉。
 - `--skip_host_removal` **只关第二级**,第一级永远跑。
 
-四个容易被后人改坏的地方,每个都在源码里有注释,这里只给索引:
+**Krona 与 Pavian 是同一份 kraken2 结果的两个视图,但工作方式完全不同**:
+- `KRONA_SAMPLE` / `KRONA_RUN` 是**真正的流程步骤**,产出自包含 HTML(Krona 2.8.1 内联 JS、
+  logo 用 data URI —— 已实测,页面上只剩两个要点击才走的文档链接)。它挂在 `KRAKEN2_READS`
+  之后、与报告并行,不在关键路径上。
+- Pavian **不是步骤**,它是个 R/Shiny 应用,在流程外跑。所谓"集成"就是把每个样本的 kraken2
+  report 再 publish 一份到 `summary/pavian/`(第二个 `publishDir`,没有新 process),外加一份
+  `README.txt` 说明怎么起。**别把 Pavian 装进容器** —— 为一个在流程外运行的工具拖进 R 和 Shiny。
+
+六个容易被后人改坏的地方,每个都在源码里有注释,这里只给索引:
 
 | 位置 | 不变量 |
 |---|---|
@@ -104,6 +116,8 @@ samplesheet ──▶ PIPELINE_INITIALISATION ──▶ PHAMSEEK ──▶ PIPEL
 | `modules/local/phamseek_report.nf` | 两个 optional input 用**不同**占位符文件(`NO_BRACKEN` / `NO_L2STATS`)且 `stageAs` 到**不同目录**。共用一个 `NO_FILE` 是 launch 期硬报错。判断有无用 shell 的 `basename`,不是 Groovy 的 `.name`。 |
 | `modules/local/phamseek_summary.nf` | 收到的 JSON 数少于 `ch_samplesheet.count()` 就**报错退出**。少一个样本的汇总表比没有汇总表更危险 —— 读的人分不清"没测"和"阴性"。 |
 | `KRAKEN2_READS` / `DB_MANIFEST` | `maxForks 1`。kraken2 整库载入内存,并发两个就是双倍内存,而且并不更快(第二个样本直接命中 page cache)。 |
+| `modules/local/krona_sample.nf` 的 `kreport2krona.py` | **必须带 `--intermediate-ranks`**(它自己默认是关的)。不带就只留 D/P/C/O/F/G/S 七个标准 rank,把落在别的节点上的 reads 静默丢掉 —— 测试样本上是 330 个非宿主 read 里的 74 个,而那 74 个正是落在 `root`(嵌合信号)和 `plasmids`(假阳性主因)上的。同一 script 里有一条**计数守恒检查**兜底:图里的总数与过滤后 report 第 3 列之和不等就报错退出。 |
+| `modules/local/krona_sample.nf` 的 awk | 按缩进删掉 host 子树。**只删行就够**,不用改祖先的 clade 计数:`kreport2krona.py` 用的是第 3 列(该节点自身的 reads)+ 缩进重建 lineage,从不读第 2 列。 |
 
 `DB_MANIFEST.out.manifest.first()` 里的 `.first()` 是把单值转成 value channel,好让报告
 process **每个样本跑一次**而不是全程只跑一次。删掉它会静默只出一份报告。
@@ -118,9 +132,15 @@ nextflow.config          params 默认值 · 容器默认值 · resourceLimits �
 deploy/offline.config    用 -c 叠加,关掉所有会联网的 Nextflow 功能
 ```
 
-`nextflow_schema.json` 是 `--help` 与参数校验(nf-validation 1.1.3)的来源。**加 params
+`nextflow_schema.json` 是 `--help` 与参数校验(**nf-schema 2.6.0**)的来源。**加 params
 必须同时改 `nextflow.config` 与 `nextflow_schema.json`**,否则 `validateParameters()` 会把它
 当成未知参数。
+
+**`--help` 由流程自己渲染,不走插件**(`phamseekHelp()` 在
+`subworkflows/local/utils_phamseek_pipeline/main.nf`)。理由见下一节:严格 parser 下裸
+`--help` 到 params 是 String `"true"`,而所有 nf-schema 版本都把 String 读成「显示叫这个名字
+的参数的帮助」→ 插件什么都不印、流程照跑。自己渲染顺带让 `--help <参数名>` 名副其实。
+改 schema 后**必须跑一次 `nextflow run . --help`** —— 那是唯一会执行渲染器的路径。
 
 ### 严格 config/script parser(Nextflow ≥ 26.04 的默认)
 
@@ -135,8 +155,9 @@ deploy/offline.config    用 -c 叠加,关掉所有会联网的 Nextflow 功能
 
 - 需要跨 config scope 共享的值**只能走 `params` 命名空间**(`pipeline_version`、
   `trace_timestamp` 就是这样,并在 schema 里标 `hidden`)。
-- `check_max()` 已经删除,改用 **`process.resourceLimits`**(Nextflow 24.04+,这也是
-  `nextflowVersion` floor 是 24.04 的原因)。它写成**闭包**而不是字面 map:字面 map 在
+- `check_max()` 已经删除,改用 **`process.resourceLimits`**(Nextflow 24.04+;但 floor 是
+  **25.10.0**,原因是 nf-schema 2.6.0 声明 `Plugin-Requires: >=25.10.0`)。它写成**闭包**
+  而不是字面 map:字面 map 在
   `profiles{}` 之前就求值完了,`-profile test` 把 `params.max_cpus` 改成 4 也顶不上去
   —— 实测过,不是推测。
 - pixi 的 shell-hook 字符串直接内联在 `pixi` profile 里。
@@ -152,19 +173,37 @@ deploy/offline.config    用 -c 叠加,关掉所有会联网的 Nextflow 功能
 
 ### 命令行传进来的值全是 String —— 两道防线缺一不可
 
-Nextflow 把命令行上的每个值都当 String 交给流程,于是:
+**这是 Nextflow 26.04 的行为变化,不是插件的锅。** 实测(26.04.3 与 26.04.6 一致):
 
-1. **schema 校验会拒掉一切数值与布尔参数** —— `--max_cpus 8`、`--min_reads 5`、
-   `--skip_bracken false` 全部报 `expected type: Integer, found: String`,等于命令行根本
-   设不了它们。所以 `validationLenientMode = true` 是**必需项不是偏好**:它把「能解析成
-   声明类型」的字符串放行,解析不了的(`--min_reads abc`)照样拒。
+| Nextflow | `--threads 8` | `--flag false` | `--ratio 0.9` |
+|---|---|---|---|
+| ≤ 25.10 | `Integer` | `Boolean` | `Double` |
+| ≥ 26.04 | `String` | `String` | `String` |
+
+于是两个后果,两道防线:
+
+1. **schema 必须同时声明字符串形式。** nf-validation 1.1.3 靠 `validationLenientMode`
+   补偿(它把字符串转成声明类型再校验);**nf-schema 的 `validation.lenientMode` 是另一回事**
+   —— 它让「声明为 string」的参数接受别的标量,方向正好相反,开着也救不了。开着它跑
+   `--min_reads 5` 照样被拒(2.4.2 / 2.5.1 / 2.6.0 实测一致)。
+   所以数值与布尔参数在 schema 里写成 **`"type": ["integer", "string"]` + `pattern`**,
+   `pattern` 只对 string 实例生效,所以 `--min_reads abc` 仍被拒。**主类型写在第一位**
+   —— `--help` 只显示 `type[0]`,显示联合类型会告诉读者 `--min_reads` 收字符串。
+   ⚠ 代价:`minimum`/`maximum` 只作用于 number 实例,对字符串不生效。唯一有范围的
+   `--kraken2_confidence` 因此在 `validateMode()` 里手工查。新增带范围的数值参数时照做。
 2. **放行之后它仍然是 String,而 Groovy 认为非空字符串为真**。`!params.skip_host_removal`
    在值是 `"false"` 时求值为 `false` —— 于是 `--skip_host_removal false` 会**静默跳过**
    第二级去宿主,而参数摘要里明明印着 `false`。临床数据上这是本流程能犯的最严重的错误。
 
-所以布尔参数**一律经 `skipBracken()` / `skipHostRemoval()` 读**(定义在
+所以布尔参数**一律经 `runBracken()` / `skipHostRemoval()` / `skipKrona()` 读**(定义在
 `subworkflows/local/utils_phamseek_pipeline/main.nf`,底层是 `asBool()`),
-**绝不要写 `if (!params.skip_*)`**。新增布尔参数时照此加一个访问函数。
+**绝不要写 `if (params.some_boolean)`**。新增布尔参数时照此加一个访问函数,并在 schema 里
+给它 `["boolean", "string"]` + `pattern`。
+
+**布尔参数的极性有约定**:默认关的叫 `run_*`(裸 `--run_x` 即开),默认开的叫 `skip_*`
+(裸 `--skip_x` 即关)。两者都不需要打 `false`。`--skip_bracken` 就是因为违反这条被改名成
+`--run_bracken` 的,旧名现在**显式报错**而不是被忽略 —— 被忽略的话 bracken 会在用户以为
+打开了的情况下保持关闭。
 
 ### INV-NF-* 编号是外部索引
 
@@ -246,7 +285,8 @@ gws drive files create --json '{"name":"<file>","parents":["<folder-id>"]}' \
 ## CI
 
 - `.github/workflows/ci.yml` —— **只在 `workflow_dispatch` 时手动跑**(2026-08-20 起,应要求关掉
-  自动触发)。内容是 stub 运行(Nextflow 24.04.0 与最新版两档)+ 负例校验 + shellcheck。
+  自动触发)。内容是 stub 运行(Nextflow 25.10.0 与最新版两档,**两档都要跑,因为 25.10 给
+  原生类型而 26.04 给 String**)+ 负例校验 + `--help` 渲染 + shellcheck。
   ⚠ 它必须传 `--max_memory 6.GB`:`-profile test` 要 16 GB,而 GitHub runner 只有 15.6 GB,
   Nextflow 会拒绝调度并报 `Process requirement exceeds available memory`。
 - `.github/workflows/docker.yml` —— 先验 `pixi lock --check --dry-run`,再在 `ubuntu-24.04`
@@ -271,4 +311,8 @@ gws drive files create --json '{"name":"<file>","parents":["<folder-id>"]}' \
   `--bracken_read_length`,没有安全默认值,给错只会产出看着合理的错数字。
 - **`docs/learning-hub/` 不进 git**(`.gitignore` 里),它由 `scripts/render_hub.py` 生成,
   内嵌本机的 `file://` 绝对路径。别把它加回来。
-- **改了计算相关代码后不要只看退出码**:stub 运行只验接线,不验数值。
+- **`ktImportText`,绝不用 `ktImportTaxonomy`**。后者要 Krona 自己的 NCBI taxonomy 库
+  (几百 MB,还要 `ktUpdateTaxonomy.sh` 联网抓),会同时破坏离线承诺和容器的自包含性。
+  `kreport2krona.py` 已经把 lineage 解析好了,文本导入器什么都不需要。
+- **改了计算相关代码后不要只看退出码**:stub 运行只验接线,不验数值。Krona 那步就是实例:
+  stub 全绿,而 `--intermediate-ranks` 的缺失只在拿真库跑完、逐个数字对过之后才暴露。

@@ -145,7 +145,7 @@ PROFILE
     echo "--- tool versions ---"
     kraken2 --version | head -1
     nextflow -version 2>&1 | grep -i version | head -1
-    # The ONT read-level tier, which is all v0.1 runs.
+    # The ONT read-level tier, which is all phamseek runs.
     chopper --version
     nanoq --version
     minimap2 --version

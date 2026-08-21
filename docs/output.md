@@ -5,10 +5,13 @@
   summary/
     phamseek_report.html        read this first
     phamseek_summary.tsv        one row per sample per taxon
+    phamseek_krona.html         every sample as one interactive chart
     database_manifest.tsv       which database produced these results
+    pavian/                     every kraken2 report in one place, for Pavian
   <sample_id>/
     qc/                         nanoq stats, both host-depletion levels, read diagnostics
     kraken2/                    kraken2 report (and bracken output when enabled)
+    krona/                      this sample's interactive chart
     clean_reads/                host-depleted FASTQ
     report/                     per-sample TSV and JSON
   pipeline_info/                execution trace, timeline, software versions
@@ -22,7 +25,7 @@ cannot be shared outside the institution.
 
 ## How to read a call
 
-Every row is a **candidate**. v0.1 has no assembly, no geNomad and no CheckV, so nothing
+Every row is a **candidate**. phamseek has no assembly, no geNomad and no CheckV, so nothing
 here has been confirmed by an independent method. The call grade says only how far above
 the reporting floor a row sits — nothing more.
 
@@ -58,7 +61,7 @@ which file each column appears in.
 | `nonhost_denominator` | both | The denominator behind that RPM: all reads entering kraken2 minus those kraken2 placed in the *Homo sapiens* clade — the count after level 1, **not** reduced by what level-2 alignment later removed. **Always read it next to the RPM.** In plasma and CSF the non-host fraction is tiny, so RPM inflates: 191 of 700 non-host reads is 272,857 RPM, which says nothing about absolute load. |
 | `ntc_enrichment` | summary | Ratio of sample RPM to control RPM, each offset by 1 RPM first. Reported only when the taxon really appears in the control, otherwise `NA`. It is background information, never a decision threshold. |
 | `bracken_est_reads`, `bracken_fraction` | per-sample | bracken's re-estimated abundance. bracken is off by default, in which case both are empty. |
-| `evidence` | both | Always `read_only` in v0.1. |
+| `evidence` | both | Always `read_only`: no assembly tier is implemented. |
 | `flags` | both | See below. |
 | `not_for_clinical_diagnosis` | both | Always `TRUE`. |
 
@@ -73,6 +76,56 @@ which file each column appears in.
 | `negative_control_sample` | The row belongs to a control sample. |
 | `none` | The row carries no flags. The column is never left empty. |
 | `no_taxon_passed_reporting_thresholds` | Appears only on a `not_detected` row. |
+
+## Interactive charts
+
+Two extra views of the same kraken2 pass. Neither adds evidence: they are the numbers
+already in the tables, laid out so a whole sample can be taken in at once.
+
+### Krona
+
+`summary/phamseek_krona.html` holds every sample as a separate dataset, switchable from
+the selector at the top left; `<sample_id>/krona/<sample_id>.krona.html` is one sample on
+its own. Both are self-contained — Krona inlines its JavaScript and embeds its logo — so
+they open from a file manager with no network access, and they can be e-mailed as a single
+file.
+
+**They chart the non-host subtree.** The host is removed from the chart for the same
+reason it is removed from the RPM denominator: in plasma and CSF around 82% of classified
+reads are *Homo sapiens*, and drawing that compresses everything the chart exists to show
+into a sliver too thin to click. The counts therefore reconcile with `nonhost_denominator`,
+not with the total read count. The step fails rather than render a chart whose totals do
+not add up.
+
+**Look at the two categories the tables warn about.** The chart keeps every taxonomic
+level, not only the seven standard ranks, so reads that stopped at `root` and reads
+classified as `plasmids` both appear as their own wedges. Those are exactly the confounders
+this pipeline reports on: root-level assignments are the chimera signal, and plasmid hits
+are the dominant false-positive source for phage calls. A chart drawn on
+`kreport2krona.py`'s default settings would drop both without saying so.
+
+Turn the charts off with `--skip_krona`.
+
+### Pavian
+
+`summary/pavian/` holds a second copy of every kraken2 report, named by sample, so
+[Pavian](https://github.com/fbreitwieser/pavian) can be pointed at one directory instead
+of at each sample folder in turn. It is an interactive R/Shiny application, not a pipeline
+step — it cannot produce a static artefact inside a workflow, and it is deliberately not in
+the phamseek container, which would have to carry R and Shiny for a tool that runs outside
+the workflow anyway:
+
+```bash
+cd <outdir>/summary/pavian
+docker run --rm -p 5000:5000 -v "$(pwd)":/data florianbw/pavian
+# then open http://localhost:5000 and load the reports from /data
+```
+
+Unlike the Krona charts, these reports are **as kraken2 wrote them** — host included,
+because that is where kraken2 sits in the pipeline. Pavian's bracken panels stay empty
+unless the run passed `--run_bracken`; that is this pipeline's default, not a broken
+integration. The same explanation is written to `summary/pavian/README.txt`, for whoever
+opens the directory without this page to hand.
 
 ## Host depletion
 
@@ -134,7 +187,7 @@ covers that sample. When it is high, the limiting factor may be the database rat
 sample.
 
 It is only a proxy. The direct measurement — the fraction of geNomad-called viral contigs
-that kraken2 leaves unclassified — needs the assembly tier, which v0.1 does not implement.
+that kraken2 leaves unclassified — needs the assembly tier, which is not implemented.
 
 ## Database manifest
 

@@ -1,9 +1,9 @@
 # Installing phamseek
 
-phamseek finds bacteriophage sequences in clinical metagenomes. **In v0.1** it reads
-Oxford Nanopore FASTQ, removes human reads with minimap2, and profiles what remains
-against a curated phage reference database with kraken2. Assembly, and cross-checking
-the calls against assembled viral contigs with geNomad and CheckV, arrive in v0.2 — so
+phamseek finds bacteriophage sequences in clinical metagenomes. It reads Oxford Nanopore
+FASTQ, removes human reads with minimap2, and profiles what remains against a curated
+phage reference database with kraken2. Assembly, and cross-checking the calls against
+assembled viral contigs with geNomad and CheckV, are planned but not implemented — so
 this version needs only two reference databases, not four.
 
 This guide is for the person installing it on the workstation. It assumes you can use a
@@ -41,9 +41,9 @@ so whichever route you take you get the same software down to the byte — the p
 container image ([docker/Dockerfile](../docker/Dockerfile)) installs that same lock.
 Reference databases are deliberately outside all of them: they are large, they version on their own
 schedule, and keeping them separate means a database update never requires reinstalling
-the pipeline.* **Note on the database row: v0.1 needs only the kraken2 index and a human
-index. The geNomad and CheckV databases shown there are reserved for v0.2 — you do not
-need to obtain or install them now.**
+the pipeline.* **Note on the database row: phamseek needs only the kraken2 index and a
+human index. The geNomad and CheckV databases shown there are reserved for the assembly
+tier — you do not need to obtain or install them now.**
 
 ---
 
@@ -117,7 +117,7 @@ cached.
 ### Prerequisites
 
 - Linux, x86_64 or aarch64 (the image is built natively for both)
-- Nextflow ≥ 24.04.0
+- Nextflow ≥ 25.10.0
 - Apptainer, Singularity, Docker or Podman
 - ~1.6 GB free disk for the cached image
 - No root, unless your container runtime requires it
@@ -141,7 +141,7 @@ nextflow run rujinlong/nf-phamseek -profile test,apptainer \
 
 `-profile apptainer` is the default and may be omitted; `-profile docker`, `-profile
 podman` and `-profile singularity` select the other engines. Every one of them uses the
-same image, `docker.io/jinlongru/nf-phamseek:v0.1.0`.
+same image, `docker.io/jinlongru/nf-phamseek:v0.2.0`.
 
 ### Where the image is cached
 
@@ -236,11 +236,11 @@ network, on either machine, after the archive has been copied across.
 
 ```bash
 # 1. Verify the archive against the checksum we sent you by a different channel.
-sha256sum -c phamseek-offline-v0.1.0-linux-64.tar.zst.sha256
+sha256sum -c phamseek-offline-v0.2.0-linux-64.tar.zst.sha256
 
 # 2. Unpack and install. The argument is where phamseek will live.
-tar -xf phamseek-offline-v0.1.0-linux-64.tar.zst
-cd phamseek-offline-v0.1.0-linux-64
+tar -xf phamseek-offline-v0.2.0-linux-64.tar.zst
+cd phamseek-offline-v0.2.0-linux-64
 ./install.sh ~/phamseek
 
 # 3. Confirm
@@ -305,17 +305,17 @@ artifact that can be checksummed and archived.
 
 ```bash
 # 1. Verify the image
-sha256sum -c phamseek-0.1.0-x86_64.img.sha256
+sha256sum -c phamseek-0.2.0-x86_64.img.sha256
 
 # 2. Smoke test — no databases needed
-apptainer exec --cleanenv phamseek-0.1.0-x86_64.img kraken2 --version
-apptainer exec --cleanenv phamseek-0.1.0-x86_64.img nextflow -version
+apptainer exec --cleanenv phamseek-0.2.0-x86_64.img kraken2 --version
+apptainer exec --cleanenv phamseek-0.2.0-x86_64.img nextflow -version
 
 # 3. Run, with your data and databases bound in
 apptainer run --cleanenv \
   -B /data/run01:/work \
   -B /data/databases:/db:ro \
-  phamseek-0.1.0-x86_64.img \
+  phamseek-0.2.0-x86_64.img \
     --input /work/samplesheet.csv \
     --outdir /work/results \
     --db_dir /db
@@ -353,7 +353,7 @@ libraries — the same class of failure route B guards against at install time.
 
 Databases are shipped separately from the software, as split, checksummed packages.
 
-### What v0.1 needs
+### What phamseek needs
 
 **Two things, and nothing else:**
 
@@ -362,7 +362,8 @@ Databases are shipped separately from the software, as split, checksummed packag
 | a kraken2 phage index | 7.7 GB (`inphared_decoy`) | the classification itself |
 | a human minimap2 index | ~4 GB (CHM13v2 `.mmi`) | host depletion before classification |
 
-geNomad and CheckV are **not used by v0.1**. They arrive in v0.2 together with assembly.
+geNomad and CheckV are **not used**. They belong to the assembly tier, which is not
+implemented.
 If you have seen them mentioned elsewhere, or in the architecture figure above, you can
 ignore them for now — there is nothing to download and nothing to configure.
 
@@ -632,7 +633,7 @@ trust stores. Import the proxy's CA into the JDK, or use route B and stop fighti
 
 ```bash
 rm -rf ~/phamseek           # routes A and B
-rm -f phamseek-0.1.0-*.img  # route C
+rm -f phamseek-0.2.0-*.img  # route C
 ```
 
 Databases live wherever you put them and are removed separately. Nothing was installed

@@ -3,6 +3,9 @@ process BRACKEN {
     label 'process_low'
 
     publishDir path: { "${params.outdir}/${meta.id}/kraken2" }, mode: 'copy', pattern: '*.bracken.*'
+    // Pavian reads a bracken report too, in the same kraken format. See
+    // modules/local/kraken2_reads.nf for why this second copy exists.
+    publishDir path: "${params.outdir}/summary/pavian",           mode: 'copy', pattern: '*.bracken.report.txt'
 
     input:
     tuple val(meta), path(kraken2_report)

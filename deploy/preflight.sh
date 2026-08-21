@@ -626,7 +626,7 @@ if [[ "${DO_NETWORK}" -eq 0 ]]; then
 else
     NET_OK=0; NET_TOTAL=0
     # Probe exactly the hosts the three install routes actually contact.
-    # nf-validation/nf-schema are NOT served from nextflow.io: the plugin index
+    # nf-schema is NOT served from nextflow.io: the plugin index
     # lives on raw.githubusercontent.com and the zips on github.com releases.
     declare -A NET_TARGETS=(
         ["conda-forge"]="https://conda.anaconda.org/conda-forge/noarch/repodata.json"
@@ -701,8 +701,8 @@ elif [[ ! -d "${DB_DIR}" ]]; then
     record "db.dir" FAIL "Database directory not found: ${DB_DIR}"
 else
     # The phamseek --db_dir root looks like this:
-    #     <db_dir>/kraken2/<db_name>/   hash.k2d, opts.k2d, taxo.k2d   (v0.1 required)
-    #     <db_dir>/host/                minimap2 CHM13v2 .mmi index    (v0.1 required)
+    #     <db_dir>/kraken2/<db_name>/   hash.k2d, opts.k2d, taxo.k2d   (required)
+    #     <db_dir>/host/                minimap2 CHM13v2 .mmi index    (required)
     #     <db_dir>/genomad_db/          reserved for v0.2
     #     <db_dir>/checkv/              reserved for v0.2
     # Accept a bare kraken2 database too, so this script is useful before the
@@ -737,7 +737,7 @@ else
             "kraken2 database resolved to ${K2_DIR}"
 
         # --- companion directories -------------------------------------------
-        # v0.1 is Tier 1 only: read-level profiling with kraken2, host depletion
+        # Tier 1 only: read-level profiling with kraken2, host depletion
         # with minimap2. geNomad and CheckV are reserved for v0.2, so their
         # absence is the normal state and must not read as a problem.
         if [[ "${IS_ROOT}" -eq 1 ]]; then
@@ -750,13 +750,13 @@ else
                 fi
             else
                 record "db.host" WARN "host/ not present" \
-                    "phamseek v0.1 depletes human reads with a minimap2 CHM13v2 index. Without it you must run with --skip_host_removal true, and human reads will reach the classifier."
+                    "phamseek depletes human reads with a minimap2 CHM13v2 index. Without it you must run with --skip_host_removal true, and human reads will reach the classifier."
             fi
             for sub in genomad_db checkv; do
                 if [[ -d "${DB_DIR}/${sub}" ]]; then
-                    record "db.${sub}" PASS "${sub}/ present (not used by v0.1)"
+                    record "db.${sub}" PASS "${sub}/ present (not used by the read-level tier)"
                 else
-                    record "db.${sub}" INFO "${sub}/ not present — expected for v0.1" \
+                    record "db.${sub}" INFO "${sub}/ not present — expected" \
                         "Reserved for v0.2, which adds assembly plus geNomad and CheckV. Nothing to do now."
                 fi
             done

@@ -1,10 +1,10 @@
 {
-    "$schema": "http://json-schema.org/draft-07/schema",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://raw.githubusercontent.com/rujinlong/nf-phamseek/main/nextflow_schema.json",
     "title": "rujinlong/nf-phamseek pipeline parameters",
     "description": "Phage detection in low-biomass clinical Oxford Nanopore metagenomes.",
     "type": "object",
-    "definitions": {
+    "$defs": {
         "input_output_options": {
             "title": "Input/output options",
             "type": "object",
@@ -15,7 +15,7 @@
                     "format": "file-path",
                     "mimetype": "text/csv",
                     "description": "Samplesheet: sample_id,fastq[,platform][,sample_type].",
-                    "help_text": "CSV with a header row. `sample_id` must be unique and free of whitespace. `fastq` may be absolute or relative to the samplesheet's own directory. `platform` defaults to `ont` (the only value implemented in v0.1). `sample_type` is one of `sample`, `ntc`, `positive_control`; taxa also seen in an `ntc` are flagged in the report, but never subtracted.",
+                    "help_text": "CSV with a header row. `sample_id` must be unique and free of whitespace. `fastq` may be absolute or relative to the samplesheet's own directory. `platform` defaults to `ont` (the only one implemented). `sample_type` is one of `sample`, `ntc`, `positive_control`; taxa also seen in an `ntc` are flagged in the report, but never subtracted.",
                     "fa_icon": "fas fa-file-csv"
                 },
                 "outdir": {
@@ -33,8 +33,8 @@
                         "full",
                         "setup"
                     ],
-                    "description": "Analysis tier, or `setup` to download the reference databases. Only `fast` is implemented in v0.1.",
-                    "help_text": "`fast` is read-level: QC, kraken2, two-level host depletion, bracken, report. `full` would add assembly (flye), geNomad and CheckV; it is deliberately not wired up in v0.1 and fails immediately with an explanation rather than running a partial path.",
+                    "description": "Analysis tier, or `setup` to download the reference databases. Only `fast` is implemented.",
+                    "help_text": "`fast` is read-level: QC, kraken2, two-level host depletion, bracken, report. `full` would add assembly (flye), geNomad and CheckV; it is deliberately not wired up and fails immediately with an explanation rather than running a partial path.",
                     "fa_icon": "fas fa-layer-group"
                 }
             }
@@ -96,13 +96,21 @@
             "fa_icon": "fas fa-filter",
             "properties": {
                 "chopper_min_quality": {
-                    "type": "integer",
+                    "type": [
+                        "integer",
+                        "string"
+                    ],
+                    "pattern": "^-?\\d+$",
                     "default": 10,
                     "description": "Minimum mean Phred quality per read (chopper -q).",
                     "fa_icon": "fas fa-check"
                 },
                 "chopper_min_length": {
-                    "type": "integer",
+                    "type": [
+                        "integer",
+                        "string"
+                    ],
+                    "pattern": "^-?\\d+$",
                     "default": 200,
                     "description": "Minimum read length in bp (chopper -l).",
                     "fa_icon": "fas fa-ruler-horizontal"
@@ -116,20 +124,32 @@
             "description": "Two levels. Level 1 deletes the host subtree using the kraken2 pass that has already been paid for; level 2 aligns the remainder against the host reference. A kraken2 decoy only relabels reads, so level 2 is what makes the deletion complete.",
             "properties": {
                 "skip_host_removal": {
-                    "type": "boolean",
+                    "type": [
+                        "boolean",
+                        "string"
+                    ],
+                    "pattern": "^(true|false)$",
                     "default": false,
                     "description": "Skip the level-2 aligner. Level 1 still runs.",
                     "help_text": "Leaves any host read the database does not recognise in the output. Intended for development and for databases with well-characterised host decoy content, not for data that leaves the institution.",
                     "fa_icon": "fas fa-forward"
                 },
                 "host_taxid": {
-                    "type": "integer",
+                    "type": [
+                        "integer",
+                        "string"
+                    ],
+                    "pattern": "^-?\\d+$",
                     "default": 9606,
                     "description": "Root of the host subtree to delete at level 1.",
                     "fa_icon": "fas fa-dna"
                 },
                 "viral_taxid": {
-                    "type": "integer",
+                    "type": [
+                        "integer",
+                        "string"
+                    ],
+                    "pattern": "^-?\\d+$",
                     "default": 10239,
                     "description": "Root of the viral subtree counted as evidence.",
                     "fa_icon": "fas fa-virus"
@@ -160,7 +180,11 @@
             "fa_icon": "fas fa-sitemap",
             "properties": {
                 "kraken2_confidence": {
-                    "type": "number",
+                    "type": [
+                        "number",
+                        "string"
+                    ],
+                    "pattern": "^-?(\\d+\\.?\\d*|\\.\\d+)([eE][-+]?\\d+)?$",
                     "default": 0.02,
                     "minimum": 0,
                     "maximum": 1,
@@ -168,19 +192,25 @@
                     "help_text": "0.02, not kraken2's default of 0. Against a phage reference database the default calls a taxon on a single k-mer hit, which made 61% of human and 38% of clean bacterial contigs look like phage in the benchmark this pipeline derives from. Do NOT raise it: short-read intuition does not transfer to ONT. Going from 0.02 to 0.10 costs only ~3.5 points of recall on 150 bp reads at 0.1% error, but 15 points at 95% read identity (typical R10.4 simplex) and 29 points at 87% identity, because each ONT read carries far fewer exactly-matching k-mers to vote with. Raising it also does not remove plasmid and ICE false positives, which come from real shared modules rather than stray k-mers.",
                     "fa_icon": "fas fa-percent"
                 },
-                "skip_bracken": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "Skip bracken abundance re-estimation (default: skipped).",
+                "run_bracken": {
+                    "type": [
+                        "boolean",
+                        "string"
+                    ],
+                    "pattern": "^(true|false)$",
+                    "default": false,
+                    "description": "Run bracken abundance re-estimation (off by default).",
                     "help_text": "Off by default on purpose: bracken re-estimates abundance from a k-mer distribution built for one fixed read length, an assumption ONT reads violate by construction. Kraken2 read counts and the RPM derived from them are reported regardless and do not depend on bracken. If you enable it, set bracken_read_length from the median read length of your own run -- there is no defensible default. Bracken is also skipped automatically, with a warning, when the database has no database<N>mers.kmer_distrib files.",
-                    "fa_icon": "fas fa-forward"
+                    "fa_icon": "fas fa-calculator"
                 },
                 "bracken_read_length": {
                     "type": [
                         "integer",
+                        "string",
                         "null"
                     ],
-                    "description": "Read length whose k-mer distribution bracken should use. Required when skip_bracken is false; no default, because ONT runs differ.",
+                    "pattern": "^-?\\d+$",
+                    "description": "Read length whose k-mer distribution bracken should use. Required with --run_bracken; no default, because ONT runs differ.",
                     "fa_icon": "fas fa-ruler"
                 },
                 "bracken_level": {
@@ -199,7 +229,11 @@
                     "fa_icon": "fas fa-layer-group"
                 },
                 "bracken_threshold": {
-                    "type": "integer",
+                    "type": [
+                        "integer",
+                        "string"
+                    ],
+                    "pattern": "^-?\\d+$",
                     "default": 10,
                     "description": "Minimum reads for bracken to re-estimate a taxon.",
                     "fa_icon": "fas fa-greater-than-equal"
@@ -210,20 +244,39 @@
             "title": "Reporting thresholds",
             "type": "object",
             "fa_icon": "fas fa-file-medical-alt",
-            "description": "v0.1 reports read-level evidence only, so every positive is a candidate. These thresholds decide how a candidate is graded, not whether it is confirmed.",
+            "description": "phamseek reports read-level evidence only, so every positive is a candidate. These thresholds decide how a candidate is graded, not whether it is confirmed.",
             "properties": {
                 "min_reads": {
-                    "type": "integer",
+                    "type": [
+                        "integer",
+                        "string"
+                    ],
+                    "pattern": "^-?\\d+$",
                     "default": 10,
                     "description": "Minimum reads for a taxon to be graded above `below_threshold`.",
                     "fa_icon": "fas fa-greater-than-equal"
                 },
                 "min_rpm": {
-                    "type": "number",
+                    "type": [
+                        "number",
+                        "string"
+                    ],
+                    "pattern": "^-?(\\d+\\.?\\d*|\\.\\d+)([eE][-+]?\\d+)?$",
                     "default": 1.0,
                     "description": "Minimum reads per million non-host reads for `candidate_passes_abundance_screen`.",
                     "help_text": "The denominator is non-host reads, not total reads: in plasma and CSF the human fraction dominates, and normalising by total reads would make the same organism look far rarer in a sample that simply had more host background.",
                     "fa_icon": "fas fa-percent"
+                },
+                "skip_krona": {
+                    "type": [
+                        "boolean",
+                        "string"
+                    ],
+                    "pattern": "^(true|false)$",
+                    "default": false,
+                    "description": "Skip the Krona charts.",
+                    "help_text": "One interactive chart per sample plus one for the whole run, written to <sample>/krona/ and summary/phamseek_krona.html. The charts cover the NON-HOST subtree: in plasma and CSF the host dominates the report, and charting it as well compresses everything else into an unreadable sliver. This also puts the chart on the same denominator as --min_rpm, which is already per million non-host reads. The pages are self-contained -- Krona inlines its JavaScript -- so they open with no network access.",
+                    "fa_icon": "fas fa-chart-pie"
                 }
             }
         },
@@ -233,7 +286,11 @@
             "fa_icon": "fab fa-acquisitions-incorporated",
             "properties": {
                 "max_cpus": {
-                    "type": "integer",
+                    "type": [
+                        "integer",
+                        "string"
+                    ],
+                    "pattern": "^-?\\d+$",
                     "default": 16,
                     "description": "Maximum CPUs any single task may request.",
                     "fa_icon": "fas fa-microchip"
@@ -261,46 +318,54 @@
             "fa_icon": "fas fa-file-import",
             "properties": {
                 "help": {
-                    "type": "boolean",
-                    "description": "Display help text.",
+                    "type": [
+                        "boolean",
+                        "string"
+                    ],
+                    "description": "Print the parameter list, or the full entry for one named parameter.",
+                    "help_text": "`--help` prints every non-hidden parameter. `--help <parameter>` prints the long description of that one parameter. Add `--show_hidden` to include parameters marked hidden. The help text is rendered by the pipeline from nextflow_schema.json rather than by the schema plugin, so it works under both Nextflow syntax parsers.",
                     "fa_icon": "fas fa-question-circle",
                     "hidden": true
                 },
+                "show_hidden": {
+                    "type": [
+                        "boolean",
+                        "string"
+                    ],
+                    "pattern": "^(true|false)$",
+                    "description": "Include hidden parameters in --help.",
+                    "fa_icon": "far fa-eye-slash",
+                    "hidden": true
+                },
                 "version": {
-                    "type": "boolean",
+                    "type": [
+                        "boolean",
+                        "string"
+                    ],
+                    "pattern": "^(true|false)$",
                     "description": "Display version and exit.",
                     "fa_icon": "fas fa-question-circle",
                     "hidden": true
                 },
                 "monochrome_logs": {
-                    "type": "boolean",
+                    "type": [
+                        "boolean",
+                        "string"
+                    ],
+                    "pattern": "^(true|false)$",
                     "description": "Do not use colour in the log output.",
                     "fa_icon": "fas fa-palette",
                     "hidden": true
                 },
                 "validate_params": {
-                    "type": "boolean",
+                    "type": [
+                        "boolean",
+                        "string"
+                    ],
+                    "pattern": "^(true|false)$",
                     "default": true,
                     "description": "Validate parameters against this schema at startup.",
                     "fa_icon": "fas fa-check-square",
-                    "hidden": true
-                },
-                "validationFailUnrecognisedParams": {
-                    "type": "boolean",
-                    "description": "Fail when an unrecognised parameter is given.",
-                    "fa_icon": "far fa-check-circle",
-                    "hidden": true
-                },
-                "validationLenientMode": {
-                    "type": "boolean",
-                    "description": "Validate parameters in JSON Schema lenient mode.",
-                    "fa_icon": "far fa-check-circle",
-                    "hidden": true
-                },
-                "validationShowHiddenParams": {
-                    "type": "boolean",
-                    "description": "Show hidden parameters in --help.",
-                    "fa_icon": "far fa-eye-slash",
                     "hidden": true
                 }
             }
@@ -308,28 +373,28 @@
     },
     "allOf": [
         {
-            "$ref": "#/definitions/input_output_options"
+            "$ref": "#/$defs/input_output_options"
         },
         {
-            "$ref": "#/definitions/database_options"
+            "$ref": "#/$defs/database_options"
         },
         {
-            "$ref": "#/definitions/qc_options"
+            "$ref": "#/$defs/qc_options"
         },
         {
-            "$ref": "#/definitions/host_depletion_options"
+            "$ref": "#/$defs/host_depletion_options"
         },
         {
-            "$ref": "#/definitions/classification_options"
+            "$ref": "#/$defs/classification_options"
         },
         {
-            "$ref": "#/definitions/reporting_options"
+            "$ref": "#/$defs/reporting_options"
         },
         {
-            "$ref": "#/definitions/max_job_request_options"
+            "$ref": "#/$defs/max_job_request_options"
         },
         {
-            "$ref": "#/definitions/generic_options"
+            "$ref": "#/$defs/generic_options"
         }
     ]
 }

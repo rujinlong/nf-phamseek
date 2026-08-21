@@ -17,11 +17,15 @@ include { HOST_SPLIT_L1          } from '../modules/local/host_split_l1'
 include { HOST_DEPLETION_L2      } from '../modules/local/host_depletion_l2'
 include { BRACKEN                } from '../modules/local/bracken'
 include { DB_MANIFEST            } from '../modules/local/db_manifest'
+include { KRONA_SAMPLE           } from '../modules/local/krona_sample'
+include { KRONA_RUN              } from '../modules/local/krona_run'
 include { PHAMSEEK_REPORT        } from '../modules/local/phamseek_report'
 include { PHAMSEEK_SUMMARY       } from '../modules/local/phamseek_summary'
 include { brackenAvailable       } from '../subworkflows/local/utils_phamseek_pipeline'
-include { skipBracken            } from '../subworkflows/local/utils_phamseek_pipeline'
+include { runBracken             } from '../subworkflows/local/utils_phamseek_pipeline'
 include { skipHostRemoval        } from '../subworkflows/local/utils_phamseek_pipeline'
+include { skipKrona              } from '../subworkflows/local/utils_phamseek_pipeline'
+include { pavianReadme           } from '../subworkflows/local/utils_phamseek_pipeline'
 include { softwareVersionsToYAML } from '../subworkflows/local/utils_phamseek_pipeline'
 
 workflow PHAMSEEK {
@@ -86,10 +90,24 @@ workflow PHAMSEEK {
     // Bracken abundance re-estimation, when the database supports it.
     //
     ch_bracken = Channel.empty()
-    if (!skipBracken() && brackenAvailable()) {
+    if (runBracken() && brackenAvailable()) {
         BRACKEN( KRAKEN2_READS.out.report, ch_kraken2_db )
         ch_bracken  = BRACKEN.out.tsv
         ch_versions = ch_versions.mix(BRACKEN.out.versions.first())
+    }
+
+    //
+    // Interactive Krona charts, one per sample and one for the run.
+    //
+    // Placed here rather than after the report because it reads the kraken2
+    // report and nothing else: it neither feeds the report nor depends on it,
+    // so it runs alongside instead of extending the critical path.
+    //
+    if (!skipKrona()) {
+        KRONA_SAMPLE( KRAKEN2_READS.out.report )
+        KRONA_RUN( KRONA_SAMPLE.out.text.map { it[1] }.collect() )
+        ch_versions = ch_versions.mix(KRONA_SAMPLE.out.versions.first())
+        ch_versions = ch_versions.mix(KRONA_RUN.out.versions)
     }
 
     //
@@ -144,6 +162,15 @@ workflow PHAMSEEK {
         ch_samplesheet.count()
     )
     ch_versions = ch_versions.mix(PHAMSEEK_SUMMARY.out.versions)
+
+    // KRAKEN2_READS and BRACKEN publish a second copy of every report into
+    // summary/pavian/. This says what that directory is, for whoever opens the
+    // results without the documentation to hand.
+    Channel.of(pavianReadme())
+        .collectFile(
+            storeDir: "${params.outdir}/summary/pavian",
+            name: 'README.txt'
+        )
 
     softwareVersionsToYAML(ch_versions)
         .collectFile(

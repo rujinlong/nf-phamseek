@@ -35,11 +35,16 @@ jobs:
       fail-fast: false
       matrix:
         # The floor declared in the manifest, and the current release. The floor
-        # is tested because it is a promise: `nextflowVersion = '!>=24.04.0'`
+        # is tested because it is a promise: `nextflowVersion = '!>=25.10.0'`
         # makes Nextflow refuse to run below it, and nothing else checks that
-        # the pipeline actually still works there. 24.04 is the floor because
-        # that is where `process.resourceLimits` appeared.
-        NXF_VER: ["24.04.0", "latest-stable"]
+        # the pipeline actually still works there. 25.10 is the floor because
+        # nf-schema 2.6.0 declares `Plugin-Requires: >=25.10.0`.
+        #
+        # Both entries matter for a second reason: 25.10 hands command-line
+        # values to the pipeline with their natural types, and 26.04 hands every
+        # one of them over as a String. The parameter tests below have to pass
+        # under both, and only this matrix checks that.
+        NXF_VER: ["25.10.0", "latest-stable"]
     env:
       NXF_ANSI_LOG: false
       # Deliberately NOT set to v1. The strict parser is the default from
@@ -80,9 +85,10 @@ jobs:
       - name: Every stage ran and the run-level report was produced
         run: |
           set -eu
-          trace=$(ls results_stub/pipeline_info/execution_trace_*.txt)
+          trace=results_stub/pipeline_info/execution_trace.txt
           for proc in ONT_QC KRAKEN2_READS HOST_SPLIT_L1 HOST_DEPLETION_L2 \
-                      DB_MANIFEST PHAMSEEK_REPORT PHAMSEEK_SUMMARY; do
+                      DB_MANIFEST KRONA_SAMPLE KRONA_RUN \
+                      PHAMSEEK_REPORT PHAMSEEK_SUMMARY; do
               grep -q "PHAMSEEK:${proc}" "${trace}" || {
                   echo "${proc} did not run"; cat "${trace}"; exit 1; }
           done
@@ -96,15 +102,16 @@ jobs:
                  --outdir results_mode_full > mode_full.log 2>&1; then
               echo "--mode full was accepted"; exit 1
           fi
-          grep -q "not implemented in phamseek v0.1" mode_full.log || {
+          grep -q "\-\-mode full is not implemented" mode_full.log || {
               echo "rejected, but not for the expected reason"; cat mode_full.log; exit 1; }
 
-      # The command-line form on purpose: it is what a user types, and it only
-      # reaches the guard because validationLenientMode coerces the String and
-      # skipBracken() converts it. Both of those have silently regressed before.
+      # A bare flag on purpose: it is what a user types, and it only reaches the
+      # guard because the schema accepts the String "true" Nextflow 26.04 hands
+      # it and runBracken() converts that back to a Boolean. Both have silently
+      # regressed before.
       - name: 'bracken without --bracken_read_length is refused'
         run: |
-          if nextflow run . -profile test,nocontainer -stub --skip_bracken false \
+          if nextflow run . -profile test,nocontainer -stub --run_bracken \
                  --max_memory 6.GB --max_cpus 2 \
                  --outdir results_bracken > bracken.log 2>&1; then
               echo "bracken was enabled without a read length"; exit 1
@@ -112,8 +119,18 @@ jobs:
           grep -q "bracken_read_length is required" bracken.log || {
               echo "rejected, but not for the expected reason"; cat bracken.log; exit 1; }
 
+      - name: 'the renamed --skip_bracken is refused, not ignored'
+        run: |
+          if nextflow run . -profile test,nocontainer -stub --skip_bracken false \
+                 --max_memory 6.GB --max_cpus 2 \
+                 --outdir results_oldflag > oldflag.log 2>&1; then
+              echo "--skip_bracken was accepted"; exit 1
+          fi
+          grep -q "renamed to --run_bracken" oldflag.log || {
+              echo "rejected, but not for the expected reason"; cat oldflag.log; exit 1; }
+
       # `--skip_host_removal false` must LEAVE level 2 running. It silently
-      # skipped it before skipBracken()/skipHostRemoval() existed, because
+      # skipped it before runBracken()/skipHostRemoval() existed, because
       # Groovy reads the String "false" as true. A silent skip of host depletion
       # on clinical data is the worst failure this pipeline can have.
       - name: 'a boolean passed as false is honoured, not read as truthy'
@@ -121,13 +138,26 @@ jobs:
           set -eu
           nextflow run . -profile test,nocontainer -stub --skip_host_removal false \
               --max_memory 6.GB --max_cpus 2 --outdir results_l2on > l2on.log 2>&1
-          grep -q "PHAMSEEK:HOST_DEPLETION_L2" results_l2on/pipeline_info/execution_trace_*.txt || {
+          grep -q "PHAMSEEK:HOST_DEPLETION_L2" results_l2on/pipeline_info/execution_trace.txt || {
               echo "--skip_host_removal false silently skipped level-2 host depletion"; exit 1; }
           nextflow run . -profile test,nocontainer -stub --skip_host_removal true \
               --max_memory 6.GB --max_cpus 2 --outdir results_l2off > l2off.log 2>&1
-          grep -q "PHAMSEEK:HOST_DEPLETION_L2" results_l2off/pipeline_info/execution_trace_*.txt && {
+          grep -q "PHAMSEEK:HOST_DEPLETION_L2" results_l2off/pipeline_info/execution_trace.txt && {
               echo "--skip_host_removal true still ran level-2 host depletion"; exit 1; }
           true
+
+      # Rendered by the pipeline from nextflow_schema.json, not by the schema
+      # plugin -- whose help never fires under the strict parser. A malformed
+      # schema, or a Groovy slip in the renderer, would otherwise only be found
+      # by a user typing --help.
+      - name: '--help renders, and names a parameter'
+        run: |
+          set -o pipefail
+          nextflow run . --help 2>&1 | tee help.log
+          grep -q -- '--kraken2_confidence' help.log
+          grep -q 'Typical pipeline command' help.log
+          nextflow run . --help kraken2_confidence 2>&1 | tee help_one.log
+          grep -q 'range     0 to 1' help_one.log
 
       - name: Upload logs on failure
         if: failure()

@@ -2,7 +2,7 @@
 
 **Phage detection in low-biomass clinical Oxford Nanopore metagenomes.**
 
-[![Nextflow](https://img.shields.io/badge/nextflow%20DSL2-%E2%89%A524.04.0-23aa62.svg)](https://www.nextflow.io/)
+[![Nextflow](https://img.shields.io/badge/nextflow%20DSL2-%E2%89%A525.10.0-23aa62.svg)](https://www.nextflow.io/)
 [![run with apptainer](https://img.shields.io/badge/run%20with-apptainer-1d355c.svg)](https://apptainer.org/)
 [![run with docker](https://img.shields.io/badge/run%20with-docker-0db7ed?logo=docker)](https://www.docker.com/)
 [![run with pixi](https://img.shields.io/badge/run%20with-pixi-yellow.svg)](https://pixi.sh/)
@@ -11,7 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > [!WARNING]
-> **NOT FOR CLINICAL DIAGNOSIS.** v0.1 reports read-level k-mer evidence only.
+> **NOT FOR CLINICAL DIAGNOSIS.** phamseek reports read-level k-mer evidence only.
 > Every positive is a *candidate* and has to be confirmed by an orthogonal method.
 
 ---
@@ -20,8 +20,8 @@
 
 **nf-phamseek** takes basecalled Oxford Nanopore reads from plasma or cerebrospinal
 fluid, removes human sequence in two independent passes, and classifies what remains
-against a phage reference database. Each run produces one HTML report and one summary
-TSV, plus a TSV and a JSON per sample.
+against a phage reference database. Each run produces one HTML report, one summary TSV
+and one interactive Krona chart, plus a TSV, a JSON and a Krona chart per sample.
 
 The pipeline is implemented in [Nextflow](https://www.nextflow.io) DSL2. Software comes
 from a single multi-arch container image (`linux/amd64` and `linux/arm64`) built from a
@@ -47,6 +47,8 @@ flowchart TD
     G --> J
     J --> L["run-level summary"]
     L --> K["phamseek_report.html<br/>phamseek_summary.tsv"]
+    C --> M["kreport2krona + ktImportText"]
+    M --> N["Krona charts<br/>non-host subtree,<br/>per sample and per run"]
 ```
 
 **kraken2 runs before host depletion on purpose.** One pass classifies every read, and
@@ -67,7 +69,7 @@ level 1 removes 0% and level 2 removes 100%. Both paths give the same answer.
 ## Quick start
 
 1. Install [Nextflow](https://www.nextflow.io/docs/latest/getstarted.html#installation)
-   (`>=24.04.0`) and one of [Apptainer](https://apptainer.org/), Docker or
+   (`>=25.10.0`) and one of [Apptainer](https://apptainer.org/), Docker or
    [pixi](https://pixi.sh/).
 
 2. Check the wiring without touching a database or a tool:
@@ -103,10 +105,12 @@ level 1 removes 0% and level 2 removes 100%. Both paths give the same answer.
        --outdir results
    ```
 
-   `-resume` continues an interrupted run instead of restarting it. Every parameter, with
-   its default, is in [docs/usage.md](docs/usage.md#key-parameters).
+   `-resume` continues an interrupted run instead of restarting it. `--help` prints every
+   parameter with its default, and `--help <parameter>` prints the long entry for one of
+   them; the same table is in [docs/usage.md](docs/usage.md#key-parameters).
 
-The report lands in `results/summary/phamseek_report.html`.
+The report lands in `results/summary/phamseek_report.html`, next to an interactive Krona
+chart of every sample in `results/summary/phamseek_krona.html`.
 
 ## Samplesheet
 
@@ -123,7 +127,7 @@ ntc_01,reads/ntc_01.fastq.gz,ont,ntc
 |---|---|---|---|
 | `sample_id` | yes | — | Unique, no whitespace. Becomes the output directory name. |
 | `fastq` | yes | — | Absolute, or relative to the samplesheet's own directory. `.fastq`/`.fq`, optionally `.gz`. |
-| `platform` | no | `ont` | Only `ont` is implemented in v0.1. |
+| `platform` | no | `ont` | Only `ont` is implemented. |
 | `sample_type` | no | `sample` | One of `sample`, `ntc`, `positive_control`. |
 
 Every row is validated before the pipeline starts: existence, readability, non-zero size,
@@ -207,7 +211,7 @@ given on the command line.
 
 | Profile | Software comes from |
 |---|---|
-| *(none)* | **Apptainer** — the default. Pulls `docker.io/jinlongru/nf-phamseek:v0.1.0`. |
+| *(none)* | **Apptainer** — the default. Pulls `docker.io/jinlongru/nf-phamseek:v0.2.0`. |
 | `apptainer` | The same thing, stated explicitly. |
 | `docker` | Docker, same image, running as your own uid/gid. |
 | `singularity`, `podman` | Same image, other engines. |
@@ -266,20 +270,20 @@ stratified by their true origin.
 These methods and numbers come from an in-silico benchmark of kraken2-based phage
 detection; the simulation script is `p0126-kraken2phage/scripts/ont_pilot.sh`.
 
-## What v0.1 deliberately does not do
+## What phamseek deliberately does not do
 
-| Not in v0.1 | Why |
+| Not implemented | Why |
 |---|---|
 | Assembly, geNomad, CheckV (`--mode full`) | The target samples are low-biomass plasma and CSF, where coverage rarely supports assembly. The validated route is kraken2 lead detection followed by targeted mapping. `--mode full` fails with that explanation rather than running a half path. |
 | Illumina / paired-end input | The QC steps, the minimap2 preset and the single-end kraken2 call are all long-read specific. Illumina data would produce numbers that look valid and are not. |
-| Splitting chimeric reads | ONT cDNA libraries produce concatemers. v0.1 measures and reports the resulting signal; it does not split reads. |
+| Splitting chimeric reads | ONT cDNA libraries produce concatemers. phamseek measures and reports the resulting signal; it does not split reads. |
 | NTC subtraction | Defining a subtraction rule needs replicate controls, which this pilot did not have. phamseek flags instead. |
 | Limit-of-detection calibration | Needs a dilution series on the real assay. |
 
 ## Requirements
 
 - Linux, x86-64 or arm64
-- Nextflow `>=24.04.0`
+- Nextflow `>=25.10.0` (the floor the nf-schema plugin declares)
 - Apptainer, Docker, or [pixi](https://pixi.sh) (a single static binary; needs no root and
   does not touch an existing conda installation)
 - RAM greater than the kraken2 database size (~12 GB for an 11 GB database)
@@ -321,15 +325,19 @@ Three things in that table are the point of the design, not incidental:
   more than one taxon. Note the asymmetry the pipeline warns about: a 5% chimera rate does
   *not* show up as 5% at root, which is why the diagnostic is labelled non-specific rather
   than reported as a chimera rate.
+- **The Krona chart shows the confounders, not only the calls.** Of `plasma_pos`'s 330
+  non-host reads, 35 are classified as `plasmids` and 38 sit at root — the two categories
+  this pipeline warns about most loudly. Both survive into the chart only because
+  `kreport2krona.py` runs with `--intermediate-ranks`; on its default settings it keeps the
+  seven standard ranks and drops those 74 reads without saying so.
 
 `db_has_decoy auto` reports what the database actually holds — for this one, human 50.3%,
 bacterial 28.4% and plasmid 9.5% of minimizers — read from `kraken2-inspect`, never from a
 sample's report.
 
-The numbers above were produced by `-profile test,apptainer` and by `-profile test,docker`,
-pulling `jinlongru/nf-phamseek:v0.1.0` from Docker Hub. The two summary tables are
-byte-identical, which is the point of shipping one image rather than one environment per
-engine.
+The same numbers come out of `-profile test,apptainer` and `-profile test,docker` against
+the published image, byte-identical in the summary table — which is the point of shipping
+one image rather than one environment per engine.
 
 [test/](test/) ships simulated ONT reads produced by
 [Badread](https://github.com/rrwick/Badread), regenerated by

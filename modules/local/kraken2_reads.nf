@@ -10,6 +10,11 @@ process KRAKEN2_READS {
     maxForks 1
 
     publishDir path: { "${params.outdir}/${meta.id}/kraken2" }, mode: 'copy', pattern: '*.report.txt'
+    // A second copy, gathered per run rather than per sample, so Pavian can be
+    // pointed at one directory instead of at every sample folder in turn. The
+    // reports are a few KB each; the duplication is not worth avoiding, and a
+    // symlink would dangle as soon as the work directory is cleaned.
+    publishDir path: "${params.outdir}/summary/pavian",           mode: 'copy', pattern: '*.report.txt'
 
     input:
     tuple val(meta), path(reads)

@@ -41,6 +41,7 @@ workflow {
     PIPELINE_INITIALISATION (
         params.version,
         params.help,
+        params.show_hidden,
         params.validate_params,
         params.monochrome_logs,
         params.outdir,

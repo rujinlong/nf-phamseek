@@ -64,21 +64,21 @@ pixi install --frozen
 
 # --- 3. 路线 B:离线包 ------------------------------------------------------
 ./deploy/pack_offline.sh --platform linux-64
-#     -> dist/phamseek-offline-v0.1.0-linux-64/
-#     -> dist/phamseek-offline-v0.1.0-linux-64.tar.zst        (~1.2 GB)
+#     -> dist/phamseek-offline-v0.2.0-linux-64/
+#     -> dist/phamseek-offline-v0.2.0-linux-64.tar.zst        (~1.2 GB)
 #        机器上没有 zstd 时回退成 .tar.gz
-#     -> dist/phamseek-offline-v0.1.0-linux-64.tar.zst.sha256
+#     -> dist/phamseek-offline-v0.2.0-linux-64.tar.zst.sha256
 
 # --- 4. 路线 C:容器 --------------------------------------------------------
 ./deploy/apptainer/build_sif.sh --platform linux-64
-#     -> ~/singularity/phamseek-0.1.0-x86_64.img              (~1.5 GB)
-#     -> ~/singularity/phamseek-0.1.0-x86_64.img.sha256
+#     -> ~/singularity/phamseek-0.2.0-x86_64.img              (~1.5 GB)
+#     -> ~/singularity/phamseek-0.2.0-x86_64.img.sha256
 
 # --- 5. 证明离线包在无网络下能装上 ------------------------------------------
 #     发货前在 x86_64 上重做一遍气隙测试。不要跳过:
 #     aarch64 上那次缺 CA store 的失败就是它抓出来的。
 apptainer build /tmp/deb12.sif docker://debian:12-slim
-cp -a dist/phamseek-offline-v0.1.0-linux-64 /tmp/ag/bundle
+cp -a dist/phamseek-offline-v0.2.0-linux-64 /tmp/ag/bundle
 apptainer exec --net --network=none --cleanenv \
   -B /tmp/ag:/tmp/ag \
   -B /etc/ssl/certs:/etc/ssl/certs:ro \
@@ -89,10 +89,10 @@ apptainer exec --net --network=none --cleanenv \
            nextflow -version && kraken2 --version'
 
 # --- 6. 验证容器 ------------------------------------------------------------
-apptainer exec --cleanenv ~/singularity/phamseek-0.1.0-x86_64.img kraken2 --version
+apptainer exec --cleanenv ~/singularity/phamseek-0.2.0-x86_64.img kraken2 --version
 apptainer exec --cleanenv \
   -B /path/to/databases:/db:ro \
-  ~/singularity/phamseek-0.1.0-x86_64.img \
+  ~/singularity/phamseek-0.2.0-x86_64.img \
   kraken2 --db /db/inphared_7Apr2026 --confidence 0.02 \
           --output /dev/null --report /dev/stdout \
           /opt/phamseek/pipeline/deploy/assets/smoke_contigs.fna
@@ -148,7 +148,7 @@ apptainer exec --cleanenv \
 
 ## 目标机上预期的数据库布局
 
-`--db_dir` 是一个根目录,每个数据库占一个子目录。**v0.1 的这个布局是固定的:**
+`--db_dir` 是一个根目录,每个数据库占一个子目录。**这个布局是固定的:**
 
 ```
 <db_dir>/
@@ -164,7 +164,7 @@ apptainer exec --cleanenv \
 什么都找不到。
 
 这几档严重级别是刻意定的:**缺 `host/` 报 WARN**(host depletion 默认开启,但 `--skip_host_removal true`
-是一条真实可用的退路),而**缺 `genomad_db/` 与 `checkv/` 报 INFO** —— v0.1 只有 Tier 1,它们不存在
+是一条真实可用的退路),而**缺 `genomad_db/` 与 `checkv/` 报 INFO** —— 只有 Tier 1,它们不存在
 才是预期状态,报 warning 会让合作方去找根本还用不上的数据库。
 
 ---
@@ -186,7 +186,7 @@ gate 4 逐条精确比对 taxid,所以 confidence 值已经固化进每一份 `S
 [pack_offline.sh](pack_offline.sh) 靠 grep [nextflow.config](../nextflow.config) 里的
 `id 'name@version'` 发现插件,并把每个都预取进离线包的 `NXF_HOME`。两条规则:
 
-- **必须钉版本。** 不带版本的 `id 'nf-validation'` 匹配不上那条 grep,不会被预取,到目标机上以下载
+- **必须钉版本。** 不带版本的 `id 'nf-schema'` 匹配不上那条 grep,不会被预取,到目标机上以下载
   失败告终。
 - **改动插件列表后重跑 [pack_offline.sh](pack_offline.sh)。** 离线包带的是构建当时存在的那批插件。
 

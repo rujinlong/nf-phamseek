@@ -2,7 +2,7 @@
 
 ## Installation
 
-You need [Nextflow](https://www.nextflow.io) (`>=24.04.0`) and one source of software.
+You need [Nextflow](https://www.nextflow.io) (`>=25.10.0`) and one source of software.
 Nextflow fetches the pipeline itself:
 
 ```bash
@@ -13,7 +13,7 @@ Pick the software source with `-profile`:
 
 | profile | software comes from | prerequisite |
 |---|---|---|
-| *(none)* / `apptainer` | **the default**. Multi-arch image `docker.io/jinlongru/nf-phamseek:v0.1.0` | apptainer installed |
+| *(none)* / `apptainer` | **the default**. Multi-arch image `docker.io/jinlongru/nf-phamseek:v0.2.0` | apptainer installed |
 | `docker` | the same image | docker installed |
 | `singularity`, `podman` | the same image | that engine installed |
 | `pixi` | the locked conda environment in the repository's `.pixi/` | run `pixi install --frozen` once |
@@ -46,15 +46,21 @@ nextflow run rujinlong/nf-phamseek \
 wiring without executing any tool (pair it with `-profile nocontainer`, or you pull a 5 GB
 image in order to run `touch`).
 
-Every parameter, with its default, is under [Key parameters](#key-parameters) below.
+Every parameter, with its default, is under [Key parameters](#key-parameters) below, and
+the same list is available from the pipeline itself:
 
-> **`--help` is currently broken on Nextflow 26.04+**, and not by this pipeline. Under
-> Nextflow's strict parser a bare `--help` arrives as the String `"true"` rather than a
-> boolean, and nf-validation reads any string as "show help for the parameter with this
-> name" — so it fails with `Specified param 'true' does not exist in JSON schema`. The same
-> is true of nf-schema 2.1–2.4, so it is not fixed by changing plugin. Until the pipeline
-> migrates to the plugin's config-driven help, use this table, or
-> `NXF_SYNTAX_PARSER=v1 nextflow run rujinlong/nf-phamseek --help`.
+```bash
+nextflow run rujinlong/nf-phamseek --help                       # every parameter
+nextflow run rujinlong/nf-phamseek --help kraken2_confidence    # one, in full
+nextflow run rujinlong/nf-phamseek --help --show_hidden         # including hidden ones
+```
+
+phamseek renders that from its own `nextflow_schema.json` rather than letting the schema
+plugin do it. The plugin's help never fires under Nextflow's strict parser: a bare
+`--help` reaches the pipeline as the String `"true"`, and every nf-schema release reads a
+string there as "show help for the parameter with this name", so it finds no parameter
+called `true`, prints nothing, and the run proceeds. Rendering it here also makes
+`--help <parameter>` mean what it says.
 
 > `-profile`, `-resume` and `-stub` are **Nextflow's own** options and take one dash;
 > `--input`, `--db_dir` and the rest are pipeline parameters and take two. Getting this
@@ -69,7 +75,7 @@ A CSV with a header row.
 |---|---|---|---|
 | `sample_id` | yes | — | Unique, no whitespace. Becomes the output directory name. |
 | `fastq` | yes | — | Absolute, or relative to the samplesheet's own directory. `.fastq`/`.fq`, optionally `.gz`. |
-| `platform` | no | `ont` | Only `ont` is implemented in v0.1. |
+| `platform` | no | `ont` | Only `ont` is implemented. |
 | `sample_type` | no | `sample` | One of `sample`, `ntc`, `positive_control`. |
 
 ```csv
@@ -148,8 +154,8 @@ minimap2 -x map-ont -I 8G -t 16 -d <db_dir>/host/chm13v2.mmi chm13v2.fna.gz
 
 ### bracken
 
-bracken is off by default (`--skip_bracken` defaults to `true`) because its model assumes
-one fixed read length, which ONT violates by construction. kraken2 read counts and the RPM
+bracken is off by default because its model assumes one fixed read length, which ONT
+violates by construction. Switch it on with a bare `--run_bracken`. kraken2 read counts and the RPM
 derived from them are reported either way and do not depend on it.
 
 To enable it you must also give `--bracken_read_length`, the median read length of your own
@@ -158,7 +164,7 @@ across ONT runs, and a wrong `-r` produces numbers that look reasonable and are 
 
 ```bash
 nextflow run rujinlong/nf-phamseek -profile apptainer \
-    --skip_bracken false --bracken_read_length 1400 \
+    --run_bracken --bracken_read_length 1400 \
     --input samplesheet.csv --db_dir <db> --outdir results
 ```
 
@@ -170,7 +176,7 @@ database. When they are missing phamseek warns, skips bracken, and records that 
 
 | Parameter | Default | Notes |
 |---|---|---|
-| `--mode` | `fast` | `setup` downloads the reference databases and stops. `full` (the assembly tier) is not implemented in v0.1 and fails with an explanation. |
+| `--mode` | `fast` | `setup` downloads the reference databases and stops. `full` (the assembly tier) is not implemented and fails with an explanation. |
 | `--kraken2_confidence` | `0.02` | Not kraken2's own default of 0. At 0 a single k-mer hit is enough to call a taxon, which made 61% of human and 38% of clean bacterial contigs look like phage. Raising it further will not remove plasmid/MGE false positives. |
 | `--db_component` | `all` | With `--mode setup` only: `all`, `kraken2` or `host`. |
 | `--db_has_decoy` | `auto` | `auto` reads the database's own taxonomy and reports human, bacterial and plasmid decoys separately. A declaration of `false` when any class is detected, or `true` when none is, produces an explicit inconsistency warning in the report. All three values can be given on the command line. |
@@ -178,9 +184,10 @@ database. When they are missing phamseek warns, skips bracken, and records that 
 | `--min_rpm` | `1.0` | Per million **non-host** reads. |
 | `--chopper_min_quality` | `10` | Mean Phred per read. |
 | `--chopper_min_length` | `200` | Minimum read length. |
-| `--skip_bracken` | `true` | Off by default, see above. Setting it `false` requires `--bracken_read_length`. |
+| `--run_bracken` | off | Off by default, see above. Switching it on requires `--bracken_read_length`. |
 | `--bracken_read_length` | none | Used only when bracken is on, and then mandatory. The median read length of your run. |
 | `--skip_host_removal` | off | Skips level 2 only. See the warning below. |
+| `--skip_krona` | off | Turns off the Krona charts. They are on by default and cost a second per sample. |
 | `--l2_input` | `all_nonhuman` | `nonhuman_nonviral` lets viral reads bypass the aligner: slightly faster, but a human read misclassified as viral then escapes host depletion. |
 | `--max_memory` | `128.GB` | Must exceed the kraken2 database size. |
 | `--max_cpus` | `16` | |
@@ -216,7 +223,7 @@ Set `--max_memory` above the database size. An 11 GB database peaks around 12 GB
 Everything is offline except these:
 
 1. `pixi install` downloads packages the first time (only needed for `-profile pixi`).
-2. Nextflow downloads the `nf-validation` plugin into `$NXF_HOME/plugins` on first run.
+2. Nextflow downloads the `nf-schema` plugin into `$NXF_HOME/plugins` on first run.
 3. With a container profile, the first run pulls the image from Docker Hub and converts it
    to a SIF.
 
@@ -232,8 +239,10 @@ bundle points `NXF_HOME` at the plugins shipped with it and layers
 | `unable to find kraken2 in $KRAKEN2_DB_PATH` | A `KRAKEN2_DB_PATH` inherited from your shell profile. phamseek unsets it and passes an absolute path, so seeing this means kraken2 was invoked outside the pipeline. |
 | `kraken2 database ... is incomplete` | `hash.k2d`, `opts.k2d` or `taxo.k2d` is missing from the directory. |
 | `No host reference (*.mmi or FASTA) found` | Build the index, or pass `--skip_host_removal` and accept the consequences stated above. |
-| `--bracken_read_length is required when bracken is enabled` | bracken was switched on (`--skip_bracken false`) without a read length. Supply the median read length nanoq reports, or leave bracken off. |
-| `--skip_bracken must be true or false` | A boolean was given something other than `true`/`false`. Command-line values arrive as strings, and Groovy reads any non-empty string as true, so the pipeline converts them explicitly rather than let `--skip_host_removal false` silently skip host depletion. |
+| `--bracken_read_length is required when bracken is enabled` | bracken was switched on (`--run_bracken`) without a read length. Supply the median read length nanoq reports, or leave bracken off. |
+| `--skip_bracken was renamed to --run_bracken` | The old flag had the awkward polarity: enabling bracken meant `--skip_bracken false`. It is refused rather than ignored, because an ignored flag would leave bracken off while you believed you had switched it on. |
+| `--run_bracken must be true or false` | A boolean was given something other than `true`/`false`. From Nextflow 26.04 every command-line value arrives as a string, and Groovy reads any non-empty string as true, so the pipeline converts them explicitly rather than let `--skip_host_removal false` silently skip host depletion. |
+| `the Krona chart accounts for N reads but the non-host report holds M` | `kreport2krona.py` dropped nodes that carry reads. The chart would have understated part of the sample, so the step fails instead. |
 | `Process requirement exceeds available memory` | A task asked for more RAM than the machine has. Lower `--max_memory` (it is a ceiling, not a request). |
 | `expected 8 fields from the report join` | A Nextflow version change altered `join(remainder: true)` padding semantics. The pipeline stops rather than assemble a report from possibly mismatched files. |
 | `expected reports for N sample(s) but found M` | A sample was dropped between classification and reporting; the summary step refuses to emit a partial run. |

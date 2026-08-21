@@ -90,7 +90,10 @@ BUNDLE="$(readlink -f "${BUNDLE}")"
 [[ -d "${BUNDLE}/pipeline" ]] || die "no pipeline/ in ${BUNDLE}"
 
 VERSION="$(awk -F'\t' '$1 == "pipeline_version" {print $2}' "${BUNDLE}/MANIFEST.tsv" 2>/dev/null || true)"
-VERSION="${VERSION:-0.1.0}"
+# Fall back to the manifest in the checkout rather than to a literal: a hardcoded
+# version silently names the image after whatever release it was written for.
+[[ -n "${VERSION}" ]] || VERSION="$(sed -n "s/^ *version *= *'\(.*\)'.*/\1/p" "${REPO_ROOT}/nextflow.config" | head -n1)"
+[[ -n "${VERSION}" ]] || die "cannot determine the pipeline version from ${BUNDLE}/MANIFEST.tsv or nextflow.config"
 
 # ~/singularity is the local convention (VPIPE_SIF_DIR default), not ~/apptainer.
 SIF_DIR="${VPIPE_SIF_DIR:-${HOME}/singularity}"

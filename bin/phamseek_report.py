@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Per-sample phamseek report: viral calls, QC, host depletion, chimera signals.
 
-Evidence model for v0.1
+Evidence model
 -----------------------
-v0.1 produces READ-LEVEL evidence only. There is no assembly, no geNomad and no
+phamseek produces READ-LEVEL evidence only. There is no assembly, no geNomad and no
 CheckV, so nothing here can be confirmed by an orthogonal line of evidence.
 Every positive row is therefore a CANDIDATE, graded only by how far above the
 reporting floor it sits. The wording is deliberate: an unconfirmed k-mer
@@ -434,7 +434,7 @@ def main() -> None:
         "n_candidates_reported": n_reported,
         "candidates": candidates,
         "caveats": [
-            "Read-level evidence only: v0.1 runs no assembly, geNomad or CheckV, "
+            "Read-level evidence only: phamseek runs no assembly, geNomad or CheckV, "
             "so no call here is confirmed by an orthogonal method.",
             "A negative result does not exclude a phage that has no close "
             "relative in the reference database: benchmark recall falls from "

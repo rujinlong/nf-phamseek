@@ -7,7 +7,7 @@ the analysis host has no outbound access.
 
 Cross-sample logic beyond concatenation: taxa that also appear in a no-template
 control (`sample_type=ntc`) in the same run are flagged `also_in_ntc`. This is a
-flag, not a subtraction — v0.1 does not attempt to correct abundances, because
+flag, not a subtraction — phamseek does not attempt to correct abundances, because
 choosing a subtraction rule needs replicate controls the pilot does not yet have.
 """
 
@@ -233,13 +233,13 @@ def render_html(samples, has_ntc, ntc_rpm, run_meta, out_path: Path):
     parts.append("<h1>phamseek &mdash; phage detection report</h1>")
     parts.append(
         f'<p class="sub">{len(samples)} sample(s) &middot; pipeline '
-        f'{html.escape(run_meta.get("version", "0.1.0"))} &middot; mode '
+        f'{html.escape(run_meta.get("version", "0.2.0"))} &middot; mode '
         f'<code>{html.escape(run_meta.get("mode", "fast"))}</code> &middot; database '
         f'<code>{html.escape(run_meta.get("db_label") or "unlabelled")}</code></p>'
     )
     parts.append(
         '<div class="banner"><strong>NOT FOR CLINICAL DIAGNOSIS.</strong> '
-        "v0.1 reports read-level k-mer evidence only &mdash; no assembly, no geNomad, "
+        "phamseek reports read-level k-mer evidence only &mdash; no assembly, no geNomad, "
         "no CheckV. Every positive row below is a <em>candidate</em> requiring "
         "orthogonal confirmation (targeted mapping, PCR, or sequencing of a "
         "second aliquot). A negative result does not exclude a phage that has no "
@@ -439,7 +439,7 @@ def render_html(samples, has_ntc, ntc_rpm, run_meta, out_path: Path):
             "in the host bin. Chimeras between related phages are worse still for "
             "monitoring, because they <em>raise</em> the apparent viral fraction "
             "(92.7% called viral) and so hide the problem from any overall viral-percentage "
-            "check. v0.1 measures; it does not split chimeric reads.</p>"
+            "check. phamseek measures; it does not split chimeric reads.</p>"
         )
         parts.append('<div class="grid">')
         for key, lbl in (
@@ -502,7 +502,7 @@ def main() -> None:
     ap.add_argument("--json", nargs="+", required=True, type=Path)
     ap.add_argument("--out-tsv", required=True, type=Path)
     ap.add_argument("--out-html", required=True, type=Path)
-    ap.add_argument("--version", default="0.1.0")
+    ap.add_argument("--version", default="0.2.0")
     ap.add_argument("--mode", default="fast")
     ap.add_argument("--db-label", default="")
     args = ap.parse_args()
