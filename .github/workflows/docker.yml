@@ -83,7 +83,10 @@ jobs:
         id: check
         run: |
           set -eu
-          say() { printf '%s\n' "$*" >> "${GITHUB_STEP_SUMMARY}"; }
+          # tee, not append: the decision has to be readable from `gh run view
+          # --log` as well as from the run summary. Writing it only to the
+          # summary leaves the log silent about why a build was skipped.
+          say() { printf '%s\n' "$*" | tee -a "${GITHUB_STEP_SUMMARY}"; }
 
           # A manual dispatch is the escape hatch: it always rebuilds, whatever
           # ref it was launched from. That is the whole point of reaching for it.
@@ -111,7 +114,8 @@ jobs:
           if ! git diff --quiet "${prev}" "${GITHUB_REF_NAME}" -- pixi.lock docker/Dockerfile; then
               echo "rebuild=true" >> "${GITHUB_OUTPUT}"
               say "Building: pixi.lock or docker/Dockerfile changed since ${prev}."
-              git diff --stat "${prev}" "${GITHUB_REF_NAME}" -- pixi.lock docker/Dockerfile >> "${GITHUB_STEP_SUMMARY}"
+              git diff --stat "${prev}" "${GITHUB_REF_NAME}" -- pixi.lock docker/Dockerfile \
+                  | tee -a "${GITHUB_STEP_SUMMARY}"
               exit 0
           fi
 
