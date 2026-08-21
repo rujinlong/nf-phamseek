@@ -294,6 +294,16 @@ gws drive files create --json '{"name":"<file>","parents":["<folder-id>"]}' \
   需要仓库 secrets `DOCKER_USER` / `DOCKER_PASSWORD`。
   推 `main` 出 `:edge`,推 `v*` tag 出 `:vX.Y.Z` 并移动 `:latest`。
 
+  **★ 镜像内容只是 `pixi.lock` + `docker/Dockerfile` 的函数,所以 `probe` job 会先判断
+  这次 tag 到底要不要重建**:相对上一个 `v*` tag 这两个文件没变,就直接
+  `docker buildx imagetools create -t <新tag> <旧tag>` —— registry 侧操作、不拉不建、约 20 秒,
+  新 tag 指向**同一个 digest**。改了才走那 11 分钟的双架构构建。`workflow_dispatch` 永远重建
+  (那是强制重建的逃生口)。
+  **重建不只是慢,它还不是 bit-reproducible** —— 实测同一 commit、同一 lock 的两次并行构建
+  (`:v0.2.0` 与 `:edge`)layer 0-4 与 7 完全相同,而 2.03 GB 的 conda 层差了 20 KB
+  (`.pyc`、mtime、conda-meta 顺序之类)。于是重建需要你论证「内容等价」,retag 不需要:
+  同一个 digest 本身就是证明。retag job 末尾那条 digest 相等断言就是在守这一点。
+
 ## 已知陷阱
 
 - **`native` 是 Groovy 保留字**,不能当 profile 名。用了它,报错会是 `Unexpected input: '{'`

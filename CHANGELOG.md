@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **A release that does not change the image no longer rebuilds it.** The image is a
+  function of exactly two files, `pixi.lock` and `docker/Dockerfile`. A `probe` job now
+  compares those against the previous `v*` tag; when they are unchanged it points the new
+  tag at the existing image with `docker buildx imagetools create` — a registry-side
+  operation taking about 20 seconds, after which both tags resolve to the identical digest.
+  A manual `workflow_dispatch` always rebuilds.
+  - This is not only about the eleven minutes. Two independent builds of the same commit
+    and the same lock produced different digests — layers 0–4 and 7 identical, the 2.03 GB
+    conda layer differing by 20 KB from `.pyc` files, mtimes and `conda-meta` ordering. A
+    rebuild therefore obliges you to argue that the contents are equivalent; a retag leaves
+    the new tag on the very same digest, which needs no argument. The job asserts that
+    equality before finishing.
 - **`summary/versions.yml` is no longer written.** `DB_MANIFEST` and `PHAMSEEK_SUMMARY` both
   publish into `summary/` and both emit a `versions.yml`, so without a `publishDir` pattern
   each wrote one there and whichever task finished later overwrote the other — leaving a
