@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **`summary/versions.yml` is no longer written.** `DB_MANIFEST` and `PHAMSEEK_SUMMARY` both
+  publish into `summary/` and both emit a `versions.yml`, so without a `publishDir` pattern
+  each wrote one there and whichever task finished later overwrote the other — leaving a
+  run-level filename that in fact held one process's versions. Both declarations now name
+  the files they publish. The complete, collated list is where it always was, in
+  `pipeline_info/software_versions.yml`. No result changes, and the container image is
+  untouched.
+
 ## v0.2.0
 
 Interactive charts, a `--help` that works, and one renamed parameter.

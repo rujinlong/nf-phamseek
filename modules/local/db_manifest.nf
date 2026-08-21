@@ -4,7 +4,13 @@ process DB_MANIFEST {
     label 'process_kraken2'
     maxForks 1
 
-    publishDir "${params.outdir}/summary", mode: 'copy'
+    // The pattern is not decoration. This process and PHAMSEEK_SUMMARY both
+    // publish into summary/ and both emit a versions.yml; without a filter each
+    // writes one there and the later task silently overwrites the earlier, so
+    // summary/versions.yml ends up holding a single process's versions under a
+    // run-level name. The complete list belongs to
+    // pipeline_info/software_versions.yml, which the workflow collates.
+    publishDir "${params.outdir}/summary", mode: 'copy', pattern: 'database_manifest.tsv'
 
     input:
     path kraken2_db

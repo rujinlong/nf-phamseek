@@ -1,7 +1,9 @@
 process PHAMSEEK_SUMMARY {
     label 'process_single'
 
-    publishDir "${params.outdir}/summary", mode: 'copy'
+    // Filtered for the same reason as modules/local/db_manifest.nf: versions.yml
+    // must not reach summary/, where two processes would fight over the name.
+    publishDir "${params.outdir}/summary", mode: 'copy', pattern: '{phamseek_summary.tsv,phamseek_report.html}'
 
     input:
     // INV-NF-02 permits a collecting glob on the *input* side of a merge step.
