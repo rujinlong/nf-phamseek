@@ -293,12 +293,22 @@ gws drive files create --json '{"name":"<file>","parents":["<folder-id>"]}' \
   manifest。不用 QEMU:模拟执行 conda 包的 post-link 脚本会把十几分钟变成几小时。
   需要仓库 secrets `DOCKER_USER` / `DOCKER_PASSWORD`。
   推 `main` 出 `:edge`,推 `v*` tag 出 `:vX.Y.Z` 并移动 `:latest`。
+  **所有 tag 的 run 共用一个 concurrency group**(分支 run 各自独立):两者都写 `:latest`,
+  不串行的话晚完成的那个会把 `:latest` 写回旧镜像(codex 审出的 P2)。
 
   **★ 镜像内容只是 `pixi.lock` + `docker/Dockerfile` 的函数,所以 `probe` job 会先判断
-  这次 tag 到底要不要重建**:相对上一个 `v*` tag 这两个文件没变,就直接
-  `docker buildx imagetools create -t <新tag> <旧tag>` —— registry 侧操作、不拉不建、约 20 秒,
-  新 tag 指向**同一个 digest**。改了才走那 11 分钟的双架构构建。`workflow_dispatch` 永远重建
-  (那是强制重建的逃生口)。
+  这次 tag 到底要不要重建**:两个文件的 sha256 与上一个 `v*` tag 的镜像**自己声明的**
+  一致,就直接 `docker buildx imagetools create` 把新 tag 指到那个 digest —— registry 侧
+  操作、不拉不建、约 25 秒。改了才走双架构构建。`workflow_dispatch` 永远重建(强制重建的逃生口)。
+
+  **★ 判据是镜像的 annotation,不是 `git diff`。** 每次真构建都往 OCI index 写
+  `org.nf-phamseek.image-inputs=<两文件的 sha256>`;复用前读**上一个 tag 当前指向的镜像**
+  的这个 annotation 来比。`git diff <prev> HEAD` 只能证明两个 commit 一致,证明不了
+  `:prev` 此刻指向的镜像就是那个 commit 构建的 —— force-push 移动过 `v*` tag、或有人手工
+  覆盖过 Docker Hub 上的 version tag,两者就会脱节,而 git-only 的判据会**继承错误的镜像并
+  报成功**(codex 审出的 P0)。annotation 读不到就退回重建,是安全降级。
+  ⚠ 因此 v0.2.1 及更早的镜像没有这个 annotation,**下一次发版必然先真构建一次**才有得继承。
+  retag 也一律用 probe 钉住的 `@sha256:...` 而不是 `:prev`,免得两步之间 tag 被人移动。
   **重建不只是慢,它还不是 bit-reproducible** —— 实测同一 commit、同一 lock 的两次并行构建
   (`:v0.2.0` 与 `:edge`)layer 0-4 与 7 完全相同,而 2.03 GB 的 conda 层差了 20 KB
   (`.pyc`、mtime、conda-meta 顺序之类)。于是重建需要你论证「内容等价」,retag 不需要:

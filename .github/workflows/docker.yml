@@ -42,8 +42,12 @@ on:
 permissions:
   contents: read
 
+# Every release shares one group, so two tags cannot publish concurrently. Both
+# move :latest, and without this the slower run wins -- a v1.1.0 finishing after
+# v1.2.0 would leave :latest on the older image. Branch pushes keep their own
+# group; they only touch :edge.
 concurrency:
-  group: docker-${{ github.ref }}
+  group: docker-${{ startsWith(github.ref, 'refs/tags/') && 'release' || github.ref }}
   cancel-in-progress: false
 
 env:
@@ -71,7 +75,9 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       rebuild: ${{ steps.check.outputs.rebuild }}
+      base_digest: ${{ steps.check.outputs.base_digest }}
       base: ${{ steps.check.outputs.base }}
+      inputs_hash: ${{ steps.check.outputs.inputs_hash }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -87,6 +93,19 @@ jobs:
           # --log` as well as from the run summary. Writing it only to the
           # summary leaves the log silent about why a build was skipped.
           say() { printf '%s\n' "$*" | tee -a "${GITHUB_STEP_SUMMARY}"; }
+
+          # The identity of the environment, as one value. Every published image
+          # carries this in an index annotation, so reuse is decided from what the
+          # REGISTRY says an image was built from -- never from what git says a tag
+          # ought to contain.
+          #
+          # That distinction is the point. `git diff prev HEAD` only proves the two
+          # commits agree; it says nothing about which image currently sits under
+          # `:prev`. Move a v* tag with a force-push, or overwrite a version tag on
+          # Docker Hub by hand, and the two stop matching -- at which point a
+          # git-only check inherits the wrong image and reports success.
+          inputs_hash=$(cat pixi.lock docker/Dockerfile | sha256sum | cut -d' ' -f1)
+          printf 'inputs_hash=%s\n' "${inputs_hash}" >> "${GITHUB_OUTPUT}"
 
           # A manual dispatch is the escape hatch: it always rebuilds, whatever
           # ref it was launched from. That is the whole point of reaching for it.
@@ -111,26 +130,33 @@ jobs:
               exit 0
           fi
 
-          if ! git diff --quiet "${prev}" "${GITHUB_REF_NAME}" -- pixi.lock docker/Dockerfile; then
-              echo "rebuild=true" >> "${GITHUB_OUTPUT}"
-              say "Building: pixi.lock or docker/Dockerfile changed since ${prev}."
-              git diff --stat "${prev}" "${GITHUB_REF_NAME}" -- pixi.lock docker/Dockerfile \
-                  | tee -a "${GITHUB_STEP_SUMMARY}"
-              exit 0
-          fi
-
-          # The inputs match, but the previous image has to exist before we can
-          # point a new name at it. A public repository needs no credentials to
-          # be inspected.
-          if ! docker buildx imagetools inspect "${IMAGE}:${prev}" > /dev/null 2>&1; then
+          # Read the previous image's own account of its inputs, and pin its digest
+          # while we are here. Everything downstream refers to that digest rather
+          # than to `:prev`, which anyone could move in between.
+          raw=$(docker buildx imagetools inspect --raw "${IMAGE}:${prev}" 2>/dev/null || true)
+          if [ -z "${raw}" ]; then
               echo "rebuild=true" >> "${GITHUB_OUTPUT}"
               say "Building: ${IMAGE}:${prev} is not on the registry to inherit from."
+              exit 0
+          fi
+          base_digest="sha256:$(printf '%s' "${raw}" | sha256sum | cut -d' ' -f1)"
+          published=$(printf '%s' "${raw}" | jq -r '.annotations["org.nf-phamseek.image-inputs"] // empty')
+
+          if [ -z "${published}" ]; then
+              echo "rebuild=true" >> "${GITHUB_OUTPUT}"
+              say "Building: ${IMAGE}:${prev} carries no input annotation, so what it was built from cannot be established."
+              exit 0
+          fi
+          if [ "${published}" != "${inputs_hash}" ]; then
+              echo "rebuild=true" >> "${GITHUB_OUTPUT}"
+              say "Building: ${IMAGE}:${prev} declares different inputs (${published:0:12} vs ${inputs_hash:0:12})."
               exit 0
           fi
 
           echo "rebuild=false" >> "${GITHUB_OUTPUT}"
           printf 'base=%s\n' "${prev}" >> "${GITHUB_OUTPUT}"
-          say "Retagging ${prev} as ${GITHUB_REF_NAME}: pixi.lock and docker/Dockerfile are unchanged."
+          printf 'base_digest=%s\n' "${base_digest}" >> "${GITHUB_OUTPUT}"
+          say "Retagging ${prev} (${base_digest:0:19}) as ${GITHUB_REF_NAME}: the published image declares the same inputs."
 
   # pixi.lock is what makes every delivery route resolve to the same software.
   # A lock nothing checks is a comment, so it is verified before anything is
@@ -250,16 +276,23 @@ jobs:
       - name: Point the new tag at the existing image
         env:
           BASE: ${{ needs.probe.outputs.base }}
+          BASE_DIGEST: ${{ needs.probe.outputs.base_digest }}
+          INPUTS_HASH: ${{ needs.probe.outputs.inputs_hash }}
         run: |
           set -eu
+          # By digest, not by "${IMAGE}:${BASE}". The probe already established
+          # that THIS digest was built from these inputs; re-resolving the tag
+          # here would reopen the window in which someone moves it.
           docker buildx imagetools create \
+              --annotation "index:org.nf-phamseek.image-inputs=${INPUTS_HASH}" \
               -t "${IMAGE}:${GITHUB_REF_NAME}" \
               -t "${IMAGE}:latest" \
-              "${IMAGE}:${BASE}"
+              "${IMAGE}@${BASE_DIGEST}"
 
-      - name: Prove both tags resolve to the same digest
+      - name: Prove the new tag resolves to the digest the probe approved
         env:
           BASE: ${{ needs.probe.outputs.base }}
+          BASE_DIGEST: ${{ needs.probe.outputs.base_digest }}
         run: |
           set -eu
           # Not decoration: this is the whole claim being made. If these ever
@@ -270,11 +303,14 @@ jobs:
               docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$1" 2>/dev/null \
                   || docker buildx imagetools inspect "$1" | awk '/^Digest:/ { print $2; exit }'
           }
-          old=$(digest_of "${IMAGE}:${BASE}")
           new=$(digest_of "${IMAGE}:${GITHUB_REF_NAME}")
-          [ -n "${old}" ] && [ -n "${new}" ] || { echo "could not read a digest back"; exit 1; }
-          printf '%s -> %s\n%s -> %s\n' "${BASE}" "${old}" "${GITHUB_REF_NAME}" "${new}"
-          [ "${old}" = "${new}" ] || { echo "digests differ; the retag did not do what it claims"; exit 1; }
+          [ -n "${new}" ] || { echo "could not read a digest back"; exit 1; }
+          printf '%s -> %s\n%s -> %s\n' "${BASE}" "${BASE_DIGEST}" "${GITHUB_REF_NAME}" "${new}"
+          # Compared against the digest the probe pinned, not against whatever
+          # ":${BASE}" resolves to now -- otherwise both sides could move together
+          # and the assertion would pass while pointing at the wrong image.
+          [ "${new}" = "${BASE_DIGEST}" ] \
+              || { echo "the new tag does not resolve to the digest the probe approved"; exit 1; }
           {
             printf '`%s` and `%s` both resolve to `%s`.\n' \
                    "${BASE}" "${GITHUB_REF_NAME}" "${new}"
@@ -285,7 +321,7 @@ jobs:
   # here rather than something to work around.
   manifest:
     name: publish multi-arch manifest
-    needs: build
+    needs: [build, probe]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     steps:
@@ -318,11 +354,18 @@ jobs:
 
       - name: Create and push the manifest list
         working-directory: /tmp/digests
+        env:
+          INPUTS_HASH: ${{ needs.probe.outputs.inputs_hash }}
         run: |
           set -eu
           ls -l
+          # The annotation is what lets a later release establish, from the
+          # registry alone, which inputs produced this image. Without it the
+          # probe has to fall back to rebuilding -- which is safe, but wasteful.
           # shellcheck disable=SC2046
-          docker buildx imagetools create ${{ steps.tags.outputs.tags }} \
+          docker buildx imagetools create \
+              --annotation "index:org.nf-phamseek.image-inputs=${INPUTS_HASH}" \
+              ${{ steps.tags.outputs.tags }} \
               $(for f in *; do printf '%s@%s ' "${IMAGE}" "$(cat "$f")"; done)
 
       - name: Show what was published

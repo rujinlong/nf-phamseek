@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- **The decision to reuse an image is now made from the registry, not from git.** Every
+  build stamps `org.nf-phamseek.image-inputs` — the sha256 of `pixi.lock` and
+  `docker/Dockerfile` — into the OCI index, and a later release compares against the
+  annotation carried by the image the previous tag *currently points at*.
+  `git diff <prev> HEAD` only proves two commits agree; it cannot prove that `:prev` still
+  holds the image that commit produced. Move a `v*` tag with a force-push, or overwrite a
+  version tag on Docker Hub by hand, and a git-only check inherits the wrong image and
+  reports success. An image without the annotation falls back to rebuilding.
+- **Retagging resolves the pinned digest**, not `:prev` a second time, so the tag cannot
+  move between the decision and the push.
+- **Every release now shares one concurrency group.** Two tags publishing at once both move
+  `:latest`, and the slower one used to win — leaving `:latest` on the older image.
+
 ## v0.2.1
 
 Housekeeping. No result changes, and the container image is the one v0.2.0
