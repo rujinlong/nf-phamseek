@@ -198,9 +198,23 @@ C 与 D 都是 Apptainer 镜像但用法完全不同,改动其中一个时别顺
 
 ### 参考库的分发
 
-`deploy/fetch_db.sh` 是给合作方的**唯一**取库入口:只依赖 `curl` / `tar` / `zstd`,断点续传,
-解压前按钉死的 SHA-256 校验。它不需要 Nextflow 也不需要容器 —— 因为拿库本来就是第一步,
-让第一步依赖后面几步是本末倒置。
+两个入口,同一个脚本:
+
+- `nextflow run rujinlong/nf-phamseek --mode setup --db_dir <dir>` —— 常规入口。
+  `main.nf` 在 `PIPELINE_INITIALISATION` **之前**分支(那个 subworkflow 会校验 samplesheet
+  并解析数据库,而 setup 时两者都还不存在),所以 setup 不跑 `validateParameters()` ——
+  `validateSetup()` 因此必须自己检查 `--db_dir` 与 `--db_component`。也因此把 schema 里
+  `input` 的 required 去掉了:`parseSamplesheet()` 本来就有更好的报错。
+- `deploy/fetch_db.sh` —— 独立脚本,给「还没装 Nextflow 就想先拖库」的机器。
+
+`DB_FETCH` 进程**刻意 `container null`**:① 库要写进 `--db_dir` 这个任意宿主路径,而 Nextflow
+只 bind work 目录与 staged input,不 bind 它(要支持就得按引擎分别写 `-B` / `-v`);
+② 为了下载数据库先拉 1.6 GB 镜像是本末倒置。它也不让 16 GB 过 work 目录 —— 脚本自身幂等,
+重跑会跳过,不需要 Nextflow 追踪这份 payload。
+
+**下载绝不自动触发。** 找不到库时报错并打印那条 `--mode setup` 命令即可 —— 自动下载会让
+一个拼错的路径变成 8.5 GB 传输,并且替用户默认「inphared_decoy 就是你要的库」,而 README
+恰恰强调选库比流程里任何参数都重要。
 
 库本身托管在 Google Drive(账号 jinlongru@gmail.com,文件夹
 [phamseek-db](https://drive.google.com/drive/folders/17p_wXQXmCiO1c4EHOOPcVjk4GAi-1I6O),

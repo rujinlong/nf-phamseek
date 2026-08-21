@@ -77,17 +77,15 @@ level 1 removes 0% and level 2 removes 100%. Both paths give the same answer.
    ```
 
 3. Get the reference databases. **They are not in the image and not in this
-   repository**, and nothing below runs without them. One command, and `curl` is its
-   only requirement:
+   repository**, and nothing below runs without them:
 
    ```bash
-   curl -fsSLO https://raw.githubusercontent.com/rujinlong/nf-phamseek/main/deploy/fetch_db.sh
-   bash fetch_db.sh --outdir /data/phamseek_db
+   nextflow run rujinlong/nf-phamseek --mode setup --db_dir /data/phamseek_db
    ```
 
-   ~8.5 GB downloaded, ~16 GB on disk once unpacked. Resumable, checksummed, and it
-   builds the directory layout the pipeline expects. Then run the bundled test data —
-   the fastest end-to-end check:
+   ~8.5 GB downloaded, ~16 GB on disk once unpacked. Resumable, checksummed, idempotent
+   (re-running skips what is already there), and it builds the directory layout the
+   pipeline expects. Then run the bundled test data — the fastest end-to-end check:
 
    ```bash
    nextflow run rujinlong/nf-phamseek -profile test,apptainer \
@@ -105,8 +103,8 @@ level 1 removes 0% and level 2 removes 100%. Both paths give the same answer.
        --outdir results
    ```
 
-   `-resume` continues an interrupted run instead of restarting it.
-   `nextflow run rujinlong/nf-phamseek --help` prints every parameter with its default.
+   `-resume` continues an interrupted run instead of restarting it. Every parameter, with
+   its default, is in [docs/usage.md](docs/usage.md#key-parameters).
 
 The report lands in `results/summary/phamseek_report.html`.
 
@@ -149,19 +147,36 @@ copied into the work directory. `--db_dir` expects:
 
 `--kraken2_db` and `--host_index` override either one individually.
 
-[deploy/fetch_db.sh](deploy/fetch_db.sh) downloads a prebuilt pair in that layout —
-`inphared_decoy` (an INPHARED-derived phage database carrying human, bacterial and
-plasmid decoy sequence) and a `map-ont` minimap2 index of T2T-CHM13v2:
+`--mode setup` downloads a prebuilt pair in that layout — `inphared_decoy` (an
+INPHARED-derived phage database carrying human, bacterial and plasmid decoy sequence) and a
+`map-ont` minimap2 index of T2T-CHM13v2:
 
 ```bash
-bash deploy/fetch_db.sh --outdir /data/phamseek_db            # both
-bash deploy/fetch_db.sh --outdir /data/phamseek_db --component kraken2
+nextflow run rujinlong/nf-phamseek --mode setup --db_dir /data/phamseek_db
+nextflow run rujinlong/nf-phamseek --mode setup --db_dir /data/phamseek_db --db_component host
 ```
 
-It needs only `curl`, `tar` and `zstd`; downloads resume after an interruption and every
-archive is checked against a pinned SHA-256 before it is unpacked. Bring your own database
-instead whenever your target niche differs — that choice matters more than anything else
-in the pipeline, for the reasons below.
+It needs only `curl`, `tar` and `zstd` — the step runs outside the container on purpose, so
+fetching a database does not first require pulling a 1.6 GB image. Downloads resume after an
+interruption, every archive is checked against a pinned SHA-256 before it is unpacked, and
+re-running skips whatever is already in place.
+
+The same thing is available as a standalone script,
+[deploy/fetch_db.sh](deploy/fetch_db.sh), for getting the databases onto a machine before
+Nextflow is installed:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/rujinlong/nf-phamseek/main/deploy/fetch_db.sh
+bash fetch_db.sh --outdir /data/phamseek_db
+```
+
+Bring your own database instead whenever your target niche differs — that choice matters
+more than anything else in the pipeline, for the reasons below.
+
+The download is **never automatic**. A run that cannot find its database stops and prints
+the exact `--mode setup` command to fix it, rather than starting an 8.5 GB transfer because
+a path was mistyped, and rather than deciding on your behalf that `inphared_decoy` is the
+right database for your samples.
 
 The choice of kraken2 database matters more than anything else in the pipeline. What
 matters is **whether it covers the target niche**, not how large or how fast it is:
@@ -200,6 +215,9 @@ given on the command line.
 | `nocontainer` | Whatever is already on `PATH` — a pre-activated shell, an HPC module system, or the offline bundle. |
 | `test` | The simulated ONT reads in [test/](test/). Combine it with one of the above. |
 | `slurm` | Submits to Slurm instead of running locally. |
+
+`--mode setup` needs no profile: the download step declares no container and uses
+`curl`, `tar` and `zstd` from the host.
 
 Nextflow has no native pixi support: the `process.pixi` directive was proposed in
 [nextflow-io/nextflow#6157](https://github.com/nextflow-io/nextflow/pull/6157), closed in

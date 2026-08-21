@@ -46,8 +46,15 @@ nextflow run rujinlong/nf-phamseek \
 wiring without executing any tool (pair it with `-profile nocontainer`, or you pull a 5 GB
 image in order to run `touch`).
 
-`nextflow run rujinlong/nf-phamseek --help` prints every parameter with its default and
-help text.
+Every parameter, with its default, is under [Key parameters](#key-parameters) below.
+
+> **`--help` is currently broken on Nextflow 26.04+**, and not by this pipeline. Under
+> Nextflow's strict parser a bare `--help` arrives as the String `"true"` rather than a
+> boolean, and nf-validation reads any string as "show help for the parameter with this
+> name" — so it fails with `Specified param 'true' does not exist in JSON schema`. The same
+> is true of nf-schema 2.1–2.4, so it is not fixed by changing plugin. Until the pipeline
+> migrates to the plugin's config-driven help, use this table, or
+> `NXF_SYNTAX_PARSER=v1 nextflow run rujinlong/nf-phamseek --help`.
 
 > `-profile`, `-resume` and `-stub` are **Nextflow's own** options and take one dash;
 > `--input`, `--db_dir` and the rest are pipeline parameters and take two. Getting this
@@ -104,14 +111,31 @@ Either can be overridden individually with `--kraken2_db` and `--host_index`.
 ### Getting a prebuilt pair in one command
 
 ```bash
-bash deploy/fetch_db.sh --outdir /data/phamseek_db                    # both
-bash deploy/fetch_db.sh --outdir /data/phamseek_db --component host   # host index only
+nextflow run rujinlong/nf-phamseek --mode setup --db_dir /data/phamseek_db
+nextflow run rujinlong/nf-phamseek --mode setup --db_dir /data/phamseek_db --db_component host
 ```
 
-8.5 GB downloaded, ~16 GB on disk once unpacked. It needs only `curl`, `tar` and `zstd`;
-downloads resume after an interruption, and every archive is checked against a pinned
-SHA-256 before it is unpacked. You get `inphared_decoy` (INPHARED-derived, carrying human,
-bacterial and plasmid decoy sequence) and a `map-ont` minimap2 index of T2T-CHM13v2.
+`--mode setup` downloads the databases and stops; it reads no samplesheet and needs no
+`--input`. It also needs no `-profile`: the download step declares no container, so
+fetching a database does not first require pulling a 1.6 GB image. What it does need on
+the host is `curl`, `tar` and `zstd`.
+
+8.5 GB downloaded, ~16 GB on disk once unpacked. Downloads resume after an interruption,
+every archive is checked against a pinned SHA-256 before it is unpacked, and re-running
+skips whatever is already in place. You get `inphared_decoy` (INPHARED-derived, carrying
+human, bacterial and plasmid decoy sequence) and a `map-ont` minimap2 index of T2T-CHM13v2.
+
+The same thing exists as a standalone script for machines that do not have Nextflow yet:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/rujinlong/nf-phamseek/main/deploy/fetch_db.sh
+bash fetch_db.sh --outdir /data/phamseek_db
+```
+
+**The download is never automatic.** An analysis run that cannot find its database stops
+and prints the `--mode setup` command that would fix it. It does not start an 8.5 GB
+transfer because a path was mistyped, and it does not decide on your behalf that
+`inphared_decoy` suits your samples.
 
 Build your own whenever your target niche differs — **that choice affects results more
 than any other parameter in the pipeline.**
@@ -146,8 +170,9 @@ database. When they are missing phamseek warns, skips bracken, and records that 
 
 | Parameter | Default | Notes |
 |---|---|---|
-| `--mode` | `fast` | `full` (the assembly tier) is not implemented in v0.1 and fails with an explanation. |
+| `--mode` | `fast` | `setup` downloads the reference databases and stops. `full` (the assembly tier) is not implemented in v0.1 and fails with an explanation. |
 | `--kraken2_confidence` | `0.02` | Not kraken2's own default of 0. At 0 a single k-mer hit is enough to call a taxon, which made 61% of human and 38% of clean bacterial contigs look like phage. Raising it further will not remove plasmid/MGE false positives. |
+| `--db_component` | `all` | With `--mode setup` only: `all`, `kraken2` or `host`. |
 | `--db_has_decoy` | `auto` | `auto` reads the database's own taxonomy and reports human, bacterial and plasmid decoys separately. A declaration of `false` when any class is detected, or `true` when none is, produces an explicit inconsistency warning in the report. All three values can be given on the command line. |
 | `--min_reads` | `10` | Reporting floor. Rows below it are still printed, marked `below_threshold`. |
 | `--min_rpm` | `1.0` | Per million **non-host** reads. |

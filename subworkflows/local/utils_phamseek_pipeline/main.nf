@@ -97,6 +97,27 @@ def phamseekFailureHint() {
 // v0.1 implements the read-level tier only. `--mode full` fails immediately
 // rather than running a partial path that would look like a complete answer.
 //
+def setupMode() {
+    return params.mode.toString() == 'setup'
+}
+
+//
+// Checks for `--mode setup`. A separate function because the setup path skips
+// PIPELINE_INITIALISATION entirely -- and therefore skips validateParameters(),
+// so nothing else checks these.
+//
+def validateSetup() {
+    if (!params.db_dir) {
+        error(
+            "--mode setup needs --db_dir <dir>: the directory to download the\n" +
+            "  reference databases into. Pass that same path to the analysis run.")
+    }
+    def component = (params.db_component ?: 'all').toString()
+    if (!(component in ['all', 'kraken2', 'host'])) {
+        error("--db_component must be 'all', 'kraken2' or 'host'; got '${component}'.")
+    }
+}
+
 def validateMode() {
     if (params.mode == 'full') {
         error(
@@ -109,7 +130,7 @@ def validateMode() {
         )
     }
     if (params.mode != 'fast') {
-        error("--mode must be 'fast' (or 'full', which v0.1 rejects); got '${params.mode}'.")
+        error("--mode must be 'fast', 'setup', or 'full' (which v0.1 rejects); got '${params.mode}'.")
     }
     if (!(params.l2_input in ['all_nonhuman', 'nonhuman_nonviral'])) {
         error("--l2_input must be 'all_nonhuman' or 'nonhuman_nonviral'; got '${params.l2_input}'.")
@@ -160,11 +181,17 @@ def resolveDatabases() {
     if (!kraken2) {
         error(
             "No kraken2 database given.\n" +
-            "  Pass --db_dir <dir> (expects <dir>/kraken2 and <dir>/host), or --kraken2_db <dir>."
+            "  Pass --db_dir <dir> (expects <dir>/kraken2 and <dir>/host), or --kraken2_db <dir>.\n" +
+            "  To download a prebuilt pair:\n" +
+            "      nextflow run ${workflow.manifest.name} --mode setup --db_dir <dir>"
         )
     }
     if (!kraken2.exists()) {
-        error("kraken2 database not found: ${kraken2}")
+        error(
+            "kraken2 database not found: ${kraken2}\n" +
+            "  Check the path for a typo, or download a prebuilt pair into it:\n" +
+            "      nextflow run ${workflow.manifest.name} --mode setup --db_dir ${params.db_dir ?: '<dir>'}"
+        )
     }
     ['hash.k2d', 'opts.k2d', 'taxo.k2d'].each { f ->
         if (!file("${kraken2}/${f}").exists()) {
@@ -183,7 +210,13 @@ def resolveDatabases() {
             )
         }
         if (!host.exists()) {
-            error("Host reference directory not found: ${host}")
+            error(
+                "Host reference directory not found: ${host}\n" +
+                "  Download one:\n" +
+                "      nextflow run ${workflow.manifest.name} --mode setup --db_component host \\\n" +
+                "          --db_dir ${params.db_dir ?: '<dir>'}\n" +
+                "  or disable the alignment pass with --skip_host_removal (read what that costs first)."
+            )
         }
         def refs = host.list().findAll { it ==~ /.*\.(mmi|fna|fa|fasta)(\.gz)?$/ }
         if (!refs) {

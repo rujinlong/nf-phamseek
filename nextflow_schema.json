@@ -9,9 +9,6 @@
             "title": "Input/output options",
             "type": "object",
             "fa_icon": "fas fa-terminal",
-            "required": [
-                "input"
-            ],
             "properties": {
                 "input": {
                     "type": "string",
@@ -33,9 +30,10 @@
                     "default": "fast",
                     "enum": [
                         "fast",
-                        "full"
+                        "full",
+                        "setup"
                     ],
-                    "description": "Analysis tier. Only `fast` is implemented in v0.1.",
+                    "description": "Analysis tier, or `setup` to download the reference databases. Only `fast` is implemented in v0.1.",
                     "help_text": "`fast` is read-level: QC, kraken2, two-level host depletion, bracken, report. `full` would add assembly (flye), geNomad and CheckV; it is deliberately not wired up in v0.1 and fails immediately with an explanation rather than running a partial path.",
                     "fa_icon": "fas fa-layer-group"
                 }
@@ -79,6 +77,16 @@
                     "type": "string",
                     "description": "Human-readable database name recorded in the report and manifest.",
                     "fa_icon": "fas fa-tag"
+                },
+                "db_component": {
+                    "type": "string",
+                    "default": "all",
+                    "enum": [
+                        "all",
+                        "kraken2",
+                        "host"
+                    ],
+                    "description": "With --mode setup, which database component to download."
                 }
             }
         },

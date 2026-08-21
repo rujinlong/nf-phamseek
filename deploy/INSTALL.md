@@ -129,10 +129,9 @@ cached.
 curl -s https://get.nextflow.io | bash
 sudo mv nextflow /usr/local/bin/     # or keep it in ~/bin and add that to PATH
 
-# 2. Get the reference databases. curl is the only requirement; ~8.5 GB down,
-#    ~16 GB on disk. Resumable and checksummed.
-curl -fsSLO https://raw.githubusercontent.com/rujinlong/nf-phamseek/main/deploy/fetch_db.sh
-bash fetch_db.sh --outdir /data/phamseek_db
+# 2. Get the reference databases. ~8.5 GB down, ~16 GB on disk; resumable,
+#    checksummed, and idempotent if you have to re-run it.
+nextflow run rujinlong/nf-phamseek --mode setup --db_dir /data/phamseek_db
 
 # 3. Confirm the pipeline, the image and the databases all resolve, on the
 #    bundled test data. This pulls ~1.6 GB once.

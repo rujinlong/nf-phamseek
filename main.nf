@@ -16,12 +16,27 @@ nextflow.enable.dsl = 2
 
 // INV-NF-01: includes only at file top level.
 include { PHAMSEEK                } from './workflows/phamseek'
+include { DB_FETCH                } from './modules/local/db_fetch'
 include { PIPELINE_INITIALISATION } from './subworkflows/local/utils_phamseek_pipeline'
 include { PIPELINE_COMPLETION     } from './subworkflows/local/utils_phamseek_pipeline'
+include { setupMode               } from './subworkflows/local/utils_phamseek_pipeline'
+include { validateSetup           } from './subworkflows/local/utils_phamseek_pipeline'
 
 workflow {
 
     main:
+
+    //
+    // `--mode setup` downloads the reference databases and stops. It branches
+    // here, ahead of PIPELINE_INITIALISATION, because that subworkflow validates
+    // a samplesheet and resolves the databases -- neither of which exists yet
+    // when the whole point of the run is to go and fetch them.
+    //
+    if (setupMode()) {
+        validateSetup()
+        DB_FETCH()
+        return
+    }
 
     PIPELINE_INITIALISATION (
         params.version,
