@@ -19,10 +19,9 @@ Oxford Nanopore 宏基因组里检出噬菌体。**只做 read 级(Tier 1)**:QC 
 | `CHANGELOG.md`、`CITATIONS.md` | 英文 |
 | 本文件(AI context) | 简体中文 |
 
-**仓库对外的一切都是英文。** 唯一的例外是本文件 —— 它是给 AI 助手的 context,不是交付物。
-
-⚠ 一个残余的不一致:`deploy/MAINTAINERS.md` 仍是中文,与「`deploy/**` 用英文」这条不符。
-碰到它时顺手转英文,别反过来把英文改回中文。
+**仓库对外的一切都是英文。** 两个例外,都不是交付物:本文件(给 AI 助手的 context),
+以及 `scripts/render_hub.py` 里那些要渲进 learning hub 的中文教学文本 ——
+`docs/learning-hub/` 不进 git,那份 HTML 是给作者自己看的。脚本本身的代码与注释仍是英文。
 
 ## 常用命令
 

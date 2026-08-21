@@ -46,7 +46,9 @@ DAG = '''graph TD
   I["两级 host depletion<br/>分类只改标签, 删除必须是真的"]
   J["db_has_decoy 改 auto<br/>查库自身 taxonomy, 不查样本 report"]
   K["交付层三个静默坑<br/>CA 证书 / Nextflow plugin / login shell"]
-  L["v0.1 定案: Tier 1 only<br/>--mode full 明确报错不留半成品"]
+  L["范围定案: Tier 1 only<br/>--mode full 明确报错不留半成品"]
+  M["交付后上游变了: Nextflow 26.04<br/>命令行值全变 String, 两道防线缺一不可"]
+  N["结果要有人看得懂: Krona 只画非宿主<br/>但 root 与 plasmid 一条都不能丢"]
 
   A -->|"结论怎么变成<br/>别人能跑的东西?"| B
   B -->|"动手前先读<br/>他们自己的材料"| C
@@ -61,7 +63,9 @@ DAG = '''graph TD
   H -.->|"离线安装的<br/>隐藏联网点"| K
   I -.-> L
   J -.-> L
-  K -.-> L'''
+  K -.-> L
+  L -->|"交付之后<br/>上游自己变了"| M
+  L -->|"表格看不出<br/>样本里有什么"| N'''
 
 CHAIN_LEAD = """<p><b>一句话主线</b>:把一个 benchmark 结论变成能在别人机器上跑的东西,
 最大的风险不是工程实现,而是<b>你以为的场景不是真实场景</b>。这条链上最贵的一步是第三步 ——
@@ -97,7 +101,7 @@ STEPS = [
      "samplesheet 从双端改单端(<code>sample_id,fastq,platform,sample_type</code>);"
      "QC 从 fastp 换成 <code>chopper</code> + <code>nanoq</code>;"
      "比对预设从 <code>-ax sr</code> 换成 <code>-ax map-ont</code>;"
-     "组装器从 megahit 换成 flye(但 v0.1 不接线,见第 ⑫ 步)。"
+     "组装器从 megahit 换成 flye(但始终没接线,见第 ⑫ 步)。"
      "<br><br>⚠ 一个容易漏的:<code>.mmi</code> 索引里存着建索引时的 <code>-k</code>/<code>-w</code>/"
      "<code>-H</code>,加载时<b>这三个会覆盖命令行给的值</b>(minimap2 会打一条 WARNING,但很容易被刷过去)。"
      "其余比对参数仍按命令行生效。所以索引要用与比对同一 preset 建,否则你以为在跑 "
@@ -176,13 +180,44 @@ STEPS = [
      "正解是 <code>kraken2-inspect</code> 查库自身,分 human / bacterial / plasmid 三类分别报;"
      "探测不到的报 <code>unknown</code> 并打 flag,<b>不猜</b>。"),
 
-    ("⑫ 范围收敛:v0.1 只做 Tier 1",
+    ("⑫ 范围收敛:只做 Tier 1",
      "how",
      "assembly + geNomad + CheckV 全部不做,<code>--mode full</code> 直接报错。三条理由:"
      "① ONT 要换 flye,是独立的一大块;② 目标场景 coverage 极低"
      "(合作方的 <i>Coxiella</i> 案例只有 0.3% genome coverage),大概率拼不出;"
      "③ 他们已验证的路径本来就是 <b>kraken2 lead detection → mapping/BLAST 确证</b>,不是组装。"
      "<br><br><b>报错而不是留半成品</b> —— 一条跑通但结果不可信的路径,比一个明确的「未实现」危险得多。"),
+
+    ("⑬ 交付之后,上游自己变了:命令行的值全成了 String",
+     "warn",
+     "Nextflow 26.04 起,命令行上的每个值都以 <b>String</b> 交给 pipeline;25.10 及以前由 launcher "
+     "转成原生类型(四个版本实测:24.10.5 与 25.10.0 给 Integer/Boolean/Double,26.04.3 与 26.04.6 全给 String)。"
+     "这不是插件的锅,而且到 26.04.6 仍未修。"
+     "<br><br>后果一:<b>Groovy 认为非空字符串为真</b>,于是 <code>--skip_host_removal false</code> 会"
+     "<b>静默跳过</b>第二级去宿主 —— 而参数摘要里明明印着 <code>false</code>。临床数据上这是本流程能犯的最严重的错误。"
+     "⇒ 布尔参数一律经 <code>asBool()</code> 访问函数读,<b>绝不写 <code>if (params.some_boolean)</code></b>。"
+     "<br><br>后果二:schema 里声明为 integer/number/boolean 的参数会被<b>直接拒</b>,等于命令行根本设不了。"
+     "nf-validation 的 <code>validationLenientMode</code> 曾补偿这点(把字符串转成声明类型再校验),"
+     "但 <b>nf-schema 的同名开关是反方向的</b> —— 它让「声明为 string」的参数接受别的标量,开着也救不了。"
+     "⇒ schema 改写成 <code>\"type\": [\"integer\", \"string\"]</code> + <code>pattern</code>,"
+     "主类型放第一位(<code>--help</code> 只显示 <code>type[0]</code>)。"
+     "<br><br>⚠ 代价:<code>minimum</code>/<code>maximum</code> 只作用于 number 实例,对字符串不生效 ——"
+     "唯一有范围的 <code>--kraken2_confidence</code> 因此改在 <code>validateMode()</code> 里手工查。"),
+
+    ("⑭ Krona:把最该被看见的那部分留在图里",
+     "how",
+     "报告是表格,回答不了「这个样本里到底有什么」。Krona 图补上这一维,每样本一张 + 全 run 一张,"
+     "自包含 HTML(Krona 2.8.1 内联 JS、logo 用 data URI,离线可开)。"
+     "<br><br><b>只画非宿主子树</b> —— 血浆/CSF 里约 82% 的已分类 read 是 <i>Homo sapiens</i>,"
+     "画进去会把其余一切压成看不见的细丝;去掉它也让图与 <code>--min_rpm</code> 用同一个分母。"
+     "<br><br>⚠ 真正的坑在转换器:<code>kreport2krona.py</code> 的 <code>--intermediate-ranks</code> "
+     "<b>默认是关的</b>,关着时它只保留 D/P/C/O/F/G/S 七个标准 rank,把落在别处的 read <b>整行跳过</b>。"
+     "实测 330 个非宿主 read 里丢 74 个,而那 74 个正是落在 <code>root</code>(嵌合信号)与 "
+     "<code>plasmids</code>(假阳性主因)上的 —— <b>默认设置恰好抹掉了这份数据里最该被看见的两类混淆源</b>,"
+     "只留下干净漂亮的病毒分支。"
+     "<br><br>⇒ 加 <code>--intermediate-ranks</code>,并在同一步做<b>计数守恒检查</b>:"
+     "图里的总数必须等于过滤后 report 第 3 列之和,不等就 <code>exit 1</code>。"
+     "<code>-stub</code> 验不出这类问题 —— 假数据上守恒平凡成立。"),
 ]
 
 # ---------------------------------------------------------------- §5 decisions
@@ -192,19 +227,36 @@ DECISIONS = [
      "重建需要原始 FASTA,而 PlusPF 是预建索引没有。",
      "并行跑、结果层合并 —— 不破坏他们现有流程。两个库共享 RefSeq 等来源、并不独立,"
      "所以这是<b>结果互证</b>而非统计意义上的交叉验证。库加载是分钟量级,跑两遍完全可接受。"],
-    ["v0.1 不做 assembly",
+    ["不做 assembly",
      "低生物量场景 coverage 太低,组装拼不出;且合作方已验证的路径不是组装。",
      "<code>--mode full</code> 明确报错并解释原因,不留可跑但不可信的半成品。"],
-    ["bracken 默认关闭",
+    ["bracken 默认关闭,且开关叫 run_bracken 而不是 skip_bracken",
      "bracken 从「一个固定读长」的 k-mer 分布重估丰度,而 ONT 读长本质可变 —— "
-     "假设被构造性地违反。原默认值 150 是短读值,对 ONT 是错的。",
-     "<code>skip_bracken=true</code>;<code>bracken_read_length</code> 无默认值,"
-     "开启时必须显式给,否则在 <code>validateMode()</code> 中止。"
-     "kraken2 read count 与 RPM 不依赖 bracken,照常输出。"],
+     "假设被构造性地违反。原默认值 150 是短读值,对 ONT 是错的。"
+     "而旧名 <code>skip_bracken=true</code> 意味着开启要打 <code>--skip_bracken false</code>,"
+     "一个必须写全的双重否定。",
+     "<code>run_bracken</code> 默认 false,裸 <code>--run_bracken</code> 即开;"
+     "<code>bracken_read_length</code> 无默认值,不给就在 <code>validateMode()</code> 中止。"
+     "<b>旧名显式报错而不是被忽略</b> —— 被忽略的话 bracken 会在用户以为打开了的情况下保持关闭。"
+     "极性约定:默认关的叫 <code>run_*</code>,默认开的叫 <code>skip_*</code>,两者都不必打 false。"],
     ["--l2_input 默认 all_nonhuman",
      "若只让「非 human 非 viral」的 read 过 L2,则一条被误判为 viral 的 human read 就绕过了去宿主 —— "
      "临床数据不能留这种旁路。",
      "viral read 也过 L2。实测代价只有约 5%(L2 负载本就由非 human 非 viral 的 read 主导)。"],
+    ["--help 自己渲染,不交给 schema 插件",
+     "严格 parser 下裸 <code>--help</code> 到 params 是 String <code>\"true\"</code>,"
+     "而<b>每个</b> nf-schema 版本都把 String 读成「显示叫这个名字的参数的帮助」——"
+     "于是插件找不到名为 true 的参数、<b>一个字都不印、pipeline 照常开跑</b>。"
+     "用户要的是帮助,拿到的是一次运行,而且没有任何信号说明它坏了。",
+     "关掉 <code>validation.help.enabled</code>,自己从同一份 <code>nextflow_schema.json</code> 渲染。"
+     "把那个 String 当<b>特性</b>用:<code>\"true\"</code> 印全部,其它字符串当参数名查 ——"
+     "<code>--help kraken2_confidence</code> 于是名副其实,两种 parser 下都工作。"],
+    ["Krona 只画非宿主,但保留所有中间 rank",
+     "画全部的话 82% 是 <i>Homo sapiens</i>,其余压成看不见的细丝;"
+     "而 <code>kreport2krona.py</code> 的默认设置又会把落在非标准 rank 上的 read 静默丢掉 ——"
+     "实测 330 里丢 74,且丢的正是 <code>root</code> 与 <code>plasmids</code> 这两类混淆源。",
+     "先按缩进删掉 host 子树再转换,并显式加 <code>--intermediate-ranks</code>;"
+     "同一步做<b>计数守恒检查</b>,图里总数与过滤后 report 第 3 列之和不等就 <code>exit 1</code>。"],
 ]
 
 # ---------------------------------------------------------------- §6 apply
@@ -240,6 +292,9 @@ CURRICULUM = [
     ("必修", "pixi 与 conda 生态的关系",
      "依赖 SSOT 是整个交付方案的地基",
      "pixi.toml / pixi.lock 的语义,以及 pixi-pack 的重定位机制"),
+    ("必修", "Nextflow 版本间的行为变化,尤其命令行参数的类型",
+     "26.04 起命令行值全变 String,一条 <code>if (params.flag)</code> 就能静默改变行为",
+     "在两个 Nextflow 世代上各跑一遍参数矩阵,别只测当前版本"),
     ("进阶", "Nextflow 的 stub 语义与其局限",
      "<code>-stub</code> 不渲染 script 块,也会短路提前 return 的初始化逻辑 —— 全绿证明不了什么",
      "读本 repo 的 <code>validateMode()</code> 与 <code>resolveDatabases()</code> 的分工"),
@@ -290,18 +345,48 @@ CARDS = [
      "而收紧阈值会把补偿一起削掉。"
      "<br><br>⚠ 低于 0.02 的取值本项目未测,所以这不是「越低越好」。"),
 
-    ("为什么 v0.1 宁可让 <code>--mode full</code> 报错,也不留一条能跑的组装路径?",
+    ("为什么宁可让 <code>--mode full</code> 报错,也不留一条能跑的组装路径?",
      "因为<b>一条跑通但结果不可信的路径,比一个明确的「未实现」危险得多</b>。"
      "<br><br>目标场景是低生物量(合作方的 <i>Coxiella</i> 案例只有 0.3% genome coverage),"
      "组装大概率拼不出东西;而用户看到有输出就会去解读它。"
      "明确报错 + 解释原因,让人知道该走哪条路(kraken2 lead → mapping/BLAST 确证)。"),
 
-    ("bracken 为什么默认关闭?",
+    ("bracken 为什么默认关闭?开关为什么叫 run_bracken 而不是 skip_bracken?",
      "它从「一个固定读长」的 k-mer 分布重估丰度,而 ONT 读长本质可变 —— <b>假设被构造性地违反</b>。"
      "原来的默认值 150 是短读值,对 ONT 直接是错的。"
-     "<br><br>现在 <code>skip_bracken=true</code>,<code>bracken_read_length</code> 无默认值:"
-     "要开就必须显式给一个来自你自己 run 的中位读长,否则在 <code>validateMode()</code> 中止。"
-     "kraken2 read count 与由它推出的 RPM 不依赖 bracken,照常输出。"),
+     "<br><br>名字则是<b>极性问题</b>:<code>skip_bracken=true</code> 意味着开启要打 "
+     "<code>--skip_bracken false</code> —— 一个必须写全的双重否定,而且从 Nextflow 26.04 起"
+     "那个 <code>false</code> 以 String 到达,不经 <code>asBool()</code> 就会被 Groovy 读成真。"
+     "改名后裸 <code>--run_bracken</code> 即开,<b>无法被写反</b>。"
+     "<br><br>约定:默认关的叫 <code>run_*</code>,默认开的叫 <code>skip_*</code>。"
+     "旧名现在<b>显式报错</b>而不是被忽略 —— 被忽略的话 bracken 会在用户以为打开了的情况下保持关闭。"),
+
+    ("同一条 pipeline 在 Nextflow 25.10 上跑得好好的,升到 26.04 后 <code>--skip_host_removal false</code> 却静默跳过了去宿主。为什么?",
+     "<b>26.04 起命令行上的每个值都以 String 交给 pipeline</b>,25.10 及以前由 launcher 转成原生类型。"
+     "四个版本实测:24.10.5 / 25.10.0 给 Integer、Boolean、Double;26.04.3 / 26.04.6 全给 String。"
+     "这是上游行为变化,到最新版仍未修。"
+     "<br><br>而 <b>Groovy 认为非空字符串为真</b>,于是 <code>\"false\"</code> 求值为 <b>真</b> ——"
+     "参数摘要里印着 <code>false</code>,行为却是「跳过」。"
+     "<br><br>两道防线缺一不可:① 布尔一律经 <code>asBool()</code> 访问函数读,"
+     "<b>绝不写 <code>if (params.some_boolean)</code></b>;"
+     "② schema 里数值/布尔参数声明成 <code>[\"integer\", \"string\"]</code> + <code>pattern</code>,"
+     "否则 <code>validateParameters()</code> 直接拒掉,命令行根本设不了。"
+     "<br><br>⚠ 别指望 nf-schema 的 <code>lenientMode</code> —— 它与 nf-validation 的同名开关"
+     "<b>方向相反</b>(它让「声明为 string」的参数接受别的标量),开着也救不了。"),
+
+    ("把 kraken2 report 转成 Krona 图,退出码 0、图也画得很漂亮。还需要检查什么?",
+     "<b>检查有没有 read 被悄悄丢掉。</b> <code>kreport2krona.py</code> 的 "
+     "<code>--intermediate-ranks</code> 默认是关的,关着时它只保留 D/P/C/O/F/G/S 七个标准 rank,"
+     "把落在其它节点上的 read <b>整行跳过</b>,不警告、不计数。"
+     "<br><br>实测:330 个非宿主 read 丢掉 74 个,而那 74 个是 <code>root</code>(38 条,嵌合信号)、"
+     "<code>cellular organisms</code>(1 条)与 <code>plasmids</code>(35 条,phage 假阳性主因)。"
+     "<b>默认设置恰好抹掉了这份数据里最该被看见的两类混淆源</b>,只留下干净的病毒分支 ——"
+     "读图的人会得出比数据支持的更强的结论。"
+     "<br><br>判据是<b>守恒</b>:图里 read 总数必须等于过滤后 report 第 3 列(每个节点自身的 reads)之和,"
+     "不等就让这一步 <code>exit 1</code>。"
+     "<br><br>可迁移原则:凡「换一种表示」的转换工具(report → 图/表/另一种格式),"
+     "都要先问<b>「它默认丢什么」</b>,并用一个守恒量把它钉住。<code>-stub</code> 验不出来 ——"
+     "假数据上守恒平凡成立。"),
 
     ("离线安装一个 conda 环境,有哪两个「不联网也会炸」的点?",
      "① <b><code>pixi-unpack</code> 没有系统 CA 信任库就 panic</b> —— 它启动时无条件构造 "
@@ -325,8 +410,8 @@ CARDS = [
 
 # ---------------------------------------------------------------- §10 glossary
 GLOSS = {
-    "Tier 1 / Tier 2": "phamseek 的两级分析。Tier 1 是 read level(QC → kraken2 → 两级去宿主 → 报告),"
-                       "v0.1 只实现这一级;Tier 2 是 assembly → geNomad → CheckV,预留未实现。",
+    "Tier 1 / Tier 2": "phamseek 的两级分析。Tier 1 是 read level(QC → kraken2 → 两级去宿主 → "
+                       "Krona 图 → 报告),只实现了这一级;Tier 2 是 assembly → geNomad → CheckV,预留未实现。",
     "两级 host depletion": "L1 用 kraken2 的分类结果删 human(秒级、99.56%),"
                            "L2 用 minimap2 对剩余约 0.44% 做精确比对兜底。分类只改标签,删除必须是真的。",
     "decoy": "参考库里加入的三类非 phage 序列:human(CHM13v2)、bacterial(GTDB 肠道菌)、"
@@ -348,6 +433,13 @@ GLOSS = {
                                  "phamseek 的 samplesheet 有 sample_type 列可标记它。",
     "cell-free RNA (cfRNA)": "血浆或脑脊液中游离的 RNA 片段。临床 NGS 用它做病原体检测,"
                              "特点是极低微生物量、极高 human 背景。",
+    "run_bracken / skip_krona": "布尔参数的极性约定:默认关的叫 run_*(裸 --run_x 即开),"
+                                "默认开的叫 skip_*(裸 --skip_x 即关)。两者都不需要在后面打 false ——"
+                                "而从 Nextflow 26.04 起打 false 本身就是危险的,因为那个值以 String 到达。",
+    "Krona / Pavian": "同一份 kraken2 结果的两个视图,但工作方式完全不同。Krona 是<b>真正的流程步骤</b>,"
+                      "产出自包含 HTML(非宿主子树,含 root 与 plasmids)。Pavian <b>不是步骤</b> ——"
+                      "它是流程外跑的 R/Shiny 应用,所谓集成就是把每个样本的 report 再 publish 一份到 "
+                      "summary/pavian/,外加一份 README。绝不为它把 R 和 Shiny 拖进容器。",
     "库盲区诊断": "报告里的一项指标:kraken2 未分类但落在 viral 特征上的比例。"
                   "用来区分「真阴性」与「参考库不覆盖」—— 没有它,用户无从判断没检出意味着什么。",
 }
@@ -384,6 +476,15 @@ sections = [
           h2="§1 · 推导链总图", anchor="chain"),
 
     L.box("".join(L.callout(kind, body, label=title) for title, kind, body in STEPS) +
+        L.figure(f"{F}/fig_cli_string_trap.jpg",
+                 caption="同一条命令在两个 Nextflow 世代上给出不同的行为,而参数摘要两边都印 "
+                         "<code>false</code>。两道防线各挡一半:访问函数管「读进来的值」,"
+                         "schema 的双类型声明管「值能不能进来」——<b>缺任何一道都会静默出错</b>。") +
+        L.figure(f"{F}/fig_krona_dropped_ranks.jpg",
+                 caption="两侧画的是同一份 report,差别只在转换器丢不丢非标准 rank。"
+                         "丢掉的 74 条不是随机一批,而是落在 <code>root</code>(嵌合信号)与 "
+                         "<code>plasmids</code>(假阳性主因)上的 —— "
+                         "<b>默认设置恰好抹掉了这份数据里最该被看见的两类混淆源</b>。") +
           L.figure(f"{F}/ont_pilot.png",
                    caption="第 ⑦⑧ 步的实测依据:左,错误率主导灵敏度,confidence 阈值的代价远大于短读;"
                            "右,按 read 真实来源分层后,跨 domain 嵌合被分到两侧,到 root 的只有 0.70%。"
@@ -446,8 +547,9 @@ sections = [
             label="🚚 三档交付") +
         L.callout("warn",
             "<b>数据库永远外置</b>,由 <code>--db_dir</code> 指向宿主目录,进容器时 <code>--bind</code> 只读挂载。"
-            "v0.1 只需要 <code>kraken2/</code> 与 <code>host/</code> 两个子目录;"
-            "<code>genomad_db/</code> 与 <code>checkv/</code> 是 v0.2 预留,缺失时 preflight 只给 INFO 不给 WARN。") +
+            "只需要 <code>kraken2/</code> 与 <code>host/</code> 两个子目录;"
+            "<code>genomad_db/</code> 与 <code>checkv/</code> 属于未实现的 assembly tier,"
+            "缺失时 preflight 只给 INFO 不给 WARN。") +
         L.callout("link",
             f"{f('deploy/INSTALL.md', 'INSTALL.md(英文,给合作方)')} · "
             f"{f('deploy/MAINTAINERS.md')} · {f('deploy/preflight.sh')} · "
@@ -458,7 +560,7 @@ sections = [
     L.box(
         L.table(["决策", "为什么", "怎么做的"], DECISIONS) +
         L.callout("warn",
-            "<b>共同的模式</b>:这四条都不是「哪个更好」的技术选择,而是<b>「错了会怎样」的风险选择</b>。"
+            "<b>共同的模式</b>:这几条都不是「哪个更好」的技术选择,而是<b>「错了会怎样」的风险选择</b>。"
             "报错优于半成品、显式优于默认、合规优于省 5% 算力 —— "
             "因为部署之后,错误的发现成本会高一个数量级。"),
         h2="§5 · 关键决策", anchor="decisions"),
@@ -513,7 +615,7 @@ sections = [
             '<a href="file:///home/allen/vpipe/docs/RUNBOOK.md">vpipe RUNBOOK(离线部署两个坑)</a>',
             label="🌐 知识库") +
         L.callout("warn",
-            "<b>红线</b>:v0.1 是 research-use-only,<b>不得用于临床诊断</b>;"
+            "<b>红线</b>:phamseek 是 research-use-only,<b>不得用于临床诊断</b>;"
             "报告里每个阳性都是需要正交确证的 candidate;"
             "ONT 先导只支持条件结论,<b>不能反推真实样本的绝对嵌合率</b>,也没测 LoD;"
             "<code>--confidence</code> 与数据库包是耦合的 —— 改阈值会让已发出的库包在重新校验时 gate 4 失败。"),
@@ -527,7 +629,7 @@ sections = [
 
 html = L.page(
     title="phamseek:把 benchmark 结论变成能交付的 pipeline",
-    subtitle="ONT 临床宏基因组的 phage 检测 · 从场景修正到 v0.1 定案",
+    subtitle="ONT 临床宏基因组的 phage 检测 · 从场景修正到可交付",
     lead="一条以「场景假设被推翻」为转折点的推导链 —— 三个前提(平台、样本、参考库)"
          "在读完合作方材料后同时崩塌,后面所有参数与架构决策都是从那次修正长出来的。",
     sections=sections,
@@ -540,7 +642,7 @@ html = L.page(
 manifest = {
     "slug": SLUG,
     "title": "phamseek:把 benchmark 结论变成能交付的 pipeline",
-    "subtitle": "ONT 临床宏基因组的 phage 检测 · 从场景修正到 v0.1 定案",
+    "subtitle": "ONT 临床宏基因组的 phage 检测 · 从场景修正到可交付",
     "lead": "一条以「场景假设被推翻」为转折点的推导链。",
     "created": "2026-08-07", "updated": "2026-08-07",
     "dag": {
@@ -548,7 +650,7 @@ manifest = {
         "nodes": ["起点 p0126 结论要交付", "初始设计 按默认假设", "读 retreat 材料 前提全错",
                   "平台修正 ONT 单端", "库选型翻转 INPHARED+decoy", "ONT 先导 confidence 锁 0.02",
                   "嵌合分层 双向危害", "架构 pixi+Nextflow 单命令", "两级 host depletion",
-                  "db_has_decoy 查库", "交付层三个坑", "v0.1 Tier 1 only"],
+                  "db_has_decoy 查库", "交付层三个坑", "Tier 1 only", "命令行值全是 String"],
         "edges": [["A", "B", "结论怎么变成别人能跑的东西"], ["B", "C", "动手前先读对方材料"],
                   ["C", "D", "平台不是 Illumina"], ["C", "E", "样本不是肠道"],
                   ["D", "F", "短读调参还成立吗"], ["F", "G", "他们自陈痛点是 chimeric reads"],
