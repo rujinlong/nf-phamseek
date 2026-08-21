@@ -328,8 +328,10 @@ gws drive files create --json '{"name":"<file>","parents":["<folder-id>"]}' \
   的样本上判反。
 - **bracken 默认关闭**,因为它的模型假设读长固定而 ONT 不满足。打开时必须给
   `--bracken_read_length`,没有安全默认值,给错只会产出看着合理的错数字。
-- **`docs/learning-hub/` 不进 git**(`.gitignore` 里),它由 `scripts/render_hub.py` 生成,
-  内嵌本机的 `file://` 绝对路径。别把它加回来。
+- **`docs/learning-hub/` 与 `.claude/` 都不进 git**(`.gitignore` 里)。前者由
+  `scripts/render_hub.py` 生成,内嵌本机 `file://` 绝对路径;后者是 `pm-cli` 的项目状态库,
+  存着本机路径与未决风险的记录 —— **这个仓库是公开的**,两者都别加回来。
+  (`CLAUDE.md` 本身在仓库根、是 tracked 的,不受影响。)
 - **`ktImportText`,绝不用 `ktImportTaxonomy`**。后者要 Krona 自己的 NCBI taxonomy 库
   (几百 MB,还要 `ktUpdateTaxonomy.sh` 联网抓),会同时破坏离线承诺和容器的自包含性。
   `kreport2krona.py` 已经把 lineage 解析好了,文本导入器什么都不需要。

@@ -27,6 +27,11 @@ phamseek-env.sh
 preflight.json
 
 # --- local working notes ----------------------------------------------------
+# Local project state, written by pm-cli. Machine paths, working notes, and a
+# running record of open risks -- including the ones about this repository being
+# public. CLAUDE.md itself lives at the root and is tracked; this is not it.
+.claude/
+
 # Rendered by scripts/render_hub.py from the local project context; it embeds
 # absolute file:// links to this machine and is not useful to anyone else.
 docs/learning-hub/
