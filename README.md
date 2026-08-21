@@ -198,7 +198,7 @@ given on the command line.
 | `singularity`, `podman` | Same image, other engines. |
 | `pixi` | The locked conda environment in `.pixi/`, activated per task. Run `pixi install --frozen` first. |
 | `nocontainer` | Whatever is already on `PATH` — a pre-activated shell, an HPC module system, or the offline bundle. |
-| `test` | The ~1.2 MB of simulated ONT reads in [test/](test/). Combine it with one of the above. |
+| `test` | The simulated ONT reads in [test/](test/). Combine it with one of the above. |
 | `slurm` | Submits to Slurm instead of running locally. |
 
 Nextflow has no native pixi support: the `process.pixi` directive was proposed in
@@ -333,9 +333,11 @@ as [`jinlongru/nf-phamseek`](https://hub.docker.com/r/jinlongru/nf-phamseek). A 
 
 ## Documentation
 
-- [docs/usage.md](docs/usage.md) — parameters, samplesheet rules, worked examples
-- [docs/output.md](docs/output.md) — output layout, every column, how to read a call
-- [deploy/INSTALL.md](deploy/INSTALL.md) — installation, including air-gapped hosts
+- [docs/usage.md](docs/usage.md) — every parameter, samplesheet rules, controls, offline
+  operation, and a troubleshooting table keyed by the error message you actually see
+- [docs/output.md](docs/output.md) — output layout, what each column means, how to read a
+  call, and the limits of the host-depletion and chimera numbers
+- [deploy/INSTALL.md](deploy/INSTALL.md) — the four install routes, including air-gapped hosts
 - [CITATIONS.md](CITATIONS.md) — the tools and reference data this pipeline depends on
 - [CHANGELOG.md](CHANGELOG.md)
 

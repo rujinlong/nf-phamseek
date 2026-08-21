@@ -26,7 +26,12 @@ deploy/dist/
 phamseek-env.sh
 preflight.json
 
-# --- generated documentation ------------------------------------------------
+# --- local working notes ----------------------------------------------------
 # Rendered by scripts/render_hub.py from the local project context; it embeds
 # absolute file:// links to this machine and is not useful to anyone else.
 docs/learning-hub/
+
+# State-of-the-delivery notes: open decisions, what was verified, what will bite
+# the next person. Deliberately untracked -- it is written for whoever is holding
+# this work, not for users, and it goes stale in a way documentation must not.
+docs/HANDOFF.md

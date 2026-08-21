@@ -10,15 +10,19 @@ Oxford Nanopore 宏基因组里检出噬菌体。**v0.1 只做 read 级(Tier 1)*
 
 所有输出都带 `NOT FOR CLINICAL DIAGNOSIS`。改动报告措辞时不要弱化它。
 
-## 语言约定(本仓库特有,别"统一")
+## 语言约定
 
 | 位置 | 语言 |
 |---|---|
-| 源码、注释、日志与错误信息、`README.md`、`deploy/INSTALL.md`、`deploy/MAINTAINERS.md` | 英文 |
-| `docs/`、`CHANGELOG.md`、`CITATIONS.md`、本文件 | 简体中文(专业名词保留英文) |
+| 源码、注释、日志与错误信息、`README.md`、`docs/**`、`deploy/**` | 英文 |
+| `CHANGELOG.md`、`CITATIONS.md` | 简体中文(专业名词保留英文)—— 尚未转换,见下 |
+| 本文件(AI context) | 简体中文 |
 
-README 面向外部用户与 GitHub 访客,是英文的;`docs/` 面向本组与合作方,是中文的。
-**不要把其中任何一侧"改成一致"**。
+**仓库对外的一切都是英文**(2026-08-21 起:`docs/` 原为中文,已随仓库公开而全部转英文)。
+唯一的例外是本文件 —— 它是给 AI 助手的 context,不是交付物。
+
+⚠ `CHANGELOG.md` 与 `CITATIONS.md` **仍是中文**,与其余部分不一致。这是待办,不是约定;
+碰到它们时顺手转英文,别反过来把英文改回中文。
 
 ## 常用命令
 

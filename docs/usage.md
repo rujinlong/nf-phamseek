@@ -1,61 +1,69 @@
-# 使用说明
+# Usage
 
-## 安装
+## Installation
 
-只需要 [Nextflow](https://www.nextflow.io)(`>=24.04.0`)和一个软件来源。Nextflow 会自己
-把流程拉下来:
+You need [Nextflow](https://www.nextflow.io) (`>=24.04.0`) and one source of software.
+Nextflow fetches the pipeline itself:
 
 ```bash
-nextflow pull rujinlong/nf-phamseek     # 或 git clone 后在仓库目录里跑
+nextflow pull rujinlong/nf-phamseek     # or git clone and run inside the checkout
 ```
 
-软件来源有三种,用 `-profile` 选:
+Pick the software source with `-profile`:
 
-| profile | 软件来自 | 前置条件 |
+| profile | software comes from | prerequisite |
 |---|---|---|
-| 不给 / `apptainer` | **默认**。多平台镜像 `docker.io/jinlongru/nf-phamseek:v0.1.0` | 装了 apptainer |
-| `docker` | 同一个镜像 | 装了 docker |
-| `pixi` | 仓库内 `.pixi/` 里那份锁定的 conda 环境 | 先跑一次 `pixi install --frozen` |
-| `nocontainer` | 已经在 `PATH` 上的工具 | 自己保证工具齐全 |
+| *(none)* / `apptainer` | **the default**. Multi-arch image `docker.io/jinlongru/nf-phamseek:v0.1.0` | apptainer installed |
+| `docker` | the same image | docker installed |
+| `singularity`, `podman` | the same image | that engine installed |
+| `pixi` | the locked conda environment in the repository's `.pixi/` | run `pixi install --frozen` once |
+| `nocontainer` | whatever is already on `PATH` | you guarantee the tools are there |
 
-`pixi` 是单个静态二进制。它把环境装进本仓库内的 `.pixi/`,不修改也不干扰已有的 conda 安装。
-没有网络的主机见 [../deploy/INSTALL.md](../deploy/INSTALL.md)。
+pixi is a single static binary. It installs into `.pixi/` inside the repository and neither
+modifies nor interferes with an existing conda installation. For hosts without network
+access see [../deploy/INSTALL.md](../deploy/INSTALL.md).
 
-Nextflow 没有原生的 pixi 支持:`process.pixi` 指令的 PR
-([nextflow-io/nextflow#6157](https://github.com/nextflow-io/nextflow/pull/6157))被关掉,
-改推通用的 `package` 指令([#6342](https://github.com/nextflow-io/nextflow/pull/6342)),
-后者也在 2026 年 2 月停摆关闭。所以 `-profile pixi` 走的是 `beforeScript` + `pixi shell-hook`
-—— 这也正好把 `LD_LIBRARY_PATH` 等 activation 变量一并带上,而只往 `PATH` 里塞 `bin/` 会漏掉它们。
+Nextflow has no native pixi support. The `process.pixi` directive was proposed in
+[nextflow-io/nextflow#6157](https://github.com/nextflow-io/nextflow/pull/6157), closed in
+favour of a general `package` directive
+([#6342](https://github.com/nextflow-io/nextflow/pull/6342)), and that closed too when the
+effort stalled in February 2026. `-profile pixi` therefore activates through
+`beforeScript` + `pixi shell-hook`, which also picks up `LD_LIBRARY_PATH` and the other
+activation variables that merely prepending `bin/` to `PATH` would miss.
 
-## 运行
+## Running
 
 ```bash
 nextflow run rujinlong/nf-phamseek \
     -profile apptainer \
     --input samplesheet.csv \
     --db_dir /path/to/phamseek_db \
-    --db_label uhgv_inphared_decoy_2026-04 \
+    --db_label inphared_decoy_2026-04 \
     --outdir results
 ```
 
-加 `-resume` 可以从中断处继续,而不是从头重跑。加 `-stub` 可以走一遍接线而不真正执行任何工具
-(配 `-profile nocontainer` 最省事,否则为了跑 `touch` 也要先拉一个 5 GB 镜像)。
+`-resume` continues from where a run stopped instead of restarting it. `-stub` walks the
+wiring without executing any tool (pair it with `-profile nocontainer`, or you pull a 5 GB
+image in order to run `touch`).
 
-`nextflow run rujinlong/nf-phamseek --help` 会打印每个参数的默认值和帮助文本。
+`nextflow run rujinlong/nf-phamseek --help` prints every parameter with its default and
+help text.
 
-> `-profile`、`-resume`、`-stub` 是 **Nextflow 自己的**参数,单横线;`--input`、`--db_dir`
-> 这些是流程的参数,双横线。写反了 Nextflow 会当成未知的流程参数而不是报错。
+> `-profile`, `-resume` and `-stub` are **Nextflow's own** options and take one dash;
+> `--input`, `--db_dir` and the rest are pipeline parameters and take two. Getting this
+> backwards makes Nextflow treat the option as an unknown pipeline parameter rather than
+> report the mistake.
 
 ## Samplesheet
 
-带表头行的 CSV。
+A CSV with a header row.
 
-| 列 | 必填 | 默认 | 说明 |
+| Column | Required | Default | Notes |
 |---|---|---|---|
-| `sample_id` | 是 | —— | 唯一,不含空白字符。会成为输出目录名。 |
-| `fastq` | 是 | —— | 绝对路径,或相对于 samplesheet 自身目录。`.fastq`/`.fq`,可带 `.gz`。 |
-| `platform` | 否 | `ont` | v0.1 只实现了 `ont`。 |
-| `sample_type` | 否 | `sample` | `sample`、`ntc`、`positive_control` 之一。 |
+| `sample_id` | yes | — | Unique, no whitespace. Becomes the output directory name. |
+| `fastq` | yes | — | Absolute, or relative to the samplesheet's own directory. `.fastq`/`.fq`, optionally `.gz`. |
+| `platform` | no | `ont` | Only `ont` is implemented in v0.1. |
+| `sample_type` | no | `sample` | One of `sample`, `ntc`, `positive_control`. |
 
 ```csv
 sample_id,fastq,platform,sample_type
@@ -64,57 +72,65 @@ csf_02,/data/run17/csf_02.fastq.gz,ont,sample
 ntc_01,reads/ntc_01.fastq.gz,ont,ntc
 ```
 
-samplesheet 的每一行在被送进流程之前都会先校验。每个文件都会检查是否存在、可读、非零字节、
-扩展名是否合理,`.gz` 文件还会读头两个字节比对 gzip magic number —— 于是扩展名错标、或开头
-就已损坏的文件会立刻失败,而不是跑了几步之后才暴露。(这个检查只看文件头,尾部被截断的
-gzip 要等工具真的读到那里才会失败。)
+Every row is validated before anything runs. Each file is checked for existence,
+readability, non-zero size and a plausible extension, and a `.gz` file has its first two
+bytes compared against the gzip magic number — so a mislabelled extension, or a file
+already corrupt at the front, fails immediately rather than several steps in. (That check
+reads the header only. A gzip truncated at the *end* fails later, when a tool reaches it.)
 
-### 对照
+`sample_type` selects how the report treats the row, not what the material was: plasma and
+CSF are both `sample`.
 
-把 no-template control 标成 `ntc`。phamseek 会给同时出现在对照里的每个 taxon 打上 `also_in_ntc`
-标记,把其中已经过线的行降级为 `candidate_contamination_suspected`(本来就是 `below_threshold`
-的行保持不变),并报告这个对照实际具备多少检出能力。它绝不扣减对照计数。
+### Controls
 
-一个非宿主 reads 很少甚至没有的对照,不足以为任何 taxon 洗脱污染嫌疑,报告里会写明这一点。
+Label a no-template control `ntc`. phamseek flags every taxon that also appears in the
+control with `also_in_ntc`, downgrades those rows that had passed the reporting floor to
+`candidate_contamination_suspected` (rows already `below_threshold` are left alone), and
+reports how much detection power that control actually had. It never subtracts control
+counts.
 
-## 数据库
+A control with few or no non-host reads cannot clear any taxon of suspicion, and the
+report says so.
+
+## Databases
 
 ```
-<db_dir>/kraken2/    hash.k2d、opts.k2d、taxo.k2d  (+ 可选的 database<N>mers.kmer_distrib)
-<db_dir>/host/       chm13v2.mmi                   (或任意 *.mmi / FASTA)
+<db_dir>/kraken2/    hash.k2d, opts.k2d, taxo.k2d  (+ optional database<N>mers.kmer_distrib)
+<db_dir>/host/       chm13v2.mmi                   (or any *.mmi / FASTA)
 ```
 
-两者可以分别用 `--kraken2_db` 和 `--host_index` 单独覆盖。
+Either can be overridden individually with `--kraken2_db` and `--host_index`.
 
-### 一条命令拿到现成的库
+### Getting a prebuilt pair in one command
 
 ```bash
-bash deploy/fetch_db.sh --outdir /data/phamseek_db                    # 两个都要
-bash deploy/fetch_db.sh --outdir /data/phamseek_db --component host   # 只要宿主索引
+bash deploy/fetch_db.sh --outdir /data/phamseek_db                    # both
+bash deploy/fetch_db.sh --outdir /data/phamseek_db --component host   # host index only
 ```
 
-下载 8.5 GB,解压后占约 16 GB。只依赖 `curl`、`tar`、`zstd`;断点续传,每个包解压前都对
-钉死的 SHA-256 校验一次。拿到的是 `inphared_decoy`(INPHARED 派生、带人源/细菌/质粒 decoy)
-与 T2T-CHM13v2 的 `map-ont` minimap2 索引。
+8.5 GB downloaded, ~16 GB on disk once unpacked. It needs only `curl`, `tar` and `zstd`;
+downloads resume after an interruption, and every archive is checked against a pinned
+SHA-256 before it is unpacked. You get `inphared_decoy` (INPHARED-derived, carrying human,
+bacterial and plasmid decoy sequence) and a `map-ont` minimap2 index of T2T-CHM13v2.
 
-目标生态位不同就自己建库 —— **这个选择对结果的影响大过流程里其他任何参数**。
+Build your own whenever your target niche differs — **that choice affects results more
+than any other parameter in the pipeline.**
 
-构建宿主索引 —— preset 必须与 mapping 时用的一致:
+Building a host index — the preset must match the one used for mapping:
 
 ```bash
 minimap2 -x map-ont -I 8G -t 16 -d <db_dir>/host/chm13v2.mmi chm13v2.fna.gz
 ```
 
-bracken 默认关闭(`--skip_bracken` 默认为 `true`),因为它的模型假定所有 read 长度一致,而
-ONT 从构造上就违反这个假定。kraken2 的 read 计数和由此得到的 RPM 无论如何都会报告,不依赖
-bracken。要打开它,必须同时用 `--bracken_read_length` 给出本次运行的 read 长度中位数
-(nanoq 会报),否则流程立刻报错中止 —— 不同 ONT 运行之间不存在站得住脚的通用默认值,而一个
-取错的 `-r` 只会产出表面合理、实则无效的数字。
+### bracken
 
-即便打开了 bracken,它也需要 kraken2 数据库里有 `database<N>mers.kmer_distrib` 文件。这些文件
-缺失时 phamseek 会警告、跳过 bracken,并把这件事记进 `summary/database_manifest.tsv`。
+bracken is off by default (`--skip_bracken` defaults to `true`) because its model assumes
+one fixed read length, which ONT violates by construction. kraken2 read counts and the RPM
+derived from them are reported either way and do not depend on it.
 
-打开它:
+To enable it you must also give `--bracken_read_length`, the median read length of your own
+run (nanoq reports it), or the pipeline stops immediately: no defensible default exists
+across ONT runs, and a wrong `-r` produces numbers that look reasonable and are not.
 
 ```bash
 nextflow run rujinlong/nf-phamseek -profile apptainer \
@@ -122,67 +138,78 @@ nextflow run rujinlong/nf-phamseek -profile apptainer \
     --input samplesheet.csv --db_dir <db> --outdir results
 ```
 
-## 关键参数
+Even when enabled, bracken needs `database<N>mers.kmer_distrib` files inside the kraken2
+database. When they are missing phamseek warns, skips bracken, and records that in
+`summary/database_manifest.tsv`.
 
-| 参数 | 默认 | 说明 |
+## Key parameters
+
+| Parameter | Default | Notes |
 |---|---|---|
-| `--mode` | `fast` | `full`(组装层)在 v0.1 未实现,会报错并解释原因。 |
-| `--kraken2_confidence` | `0.02` | 不是 kraken2 自己的默认值 0。取 0 时单个 k-mer 命中就足以判定一个 taxon,这让 61% 的人源 contig 和 38% 的干净细菌 contig 看起来像噬菌体。继续调高也去不掉质粒/MGE 假阳性。 |
-| `--db_has_decoy` | `auto` | `auto` 读数据库自身的 taxonomy,分别报告人源、细菌、质粒三类 decoy。声明 `false` 却检出任一类 decoy、或声明 `true` 却三类一个都没检出时,报告里会给出明确的不一致警告。三个取值都可直接在命令行上给。 |
-| `--min_reads` | `10` | 报告下限。低于它的行仍然打印,标为 `below_threshold`。 |
-| `--min_rpm` | `1.0` | 每百万**非宿主** reads。 |
-| `--chopper_min_quality` | `10` | 每条 read 的平均 Phred。 |
-| `--chopper_min_length` | `200` | 最短 read 长度。 |
-| `--skip_bracken` | `true` | bracken 默认关闭,原因见上。设为 `false` 打开时必须同时给 `--bracken_read_length`。 |
-| `--bracken_read_length` | 无默认 | 只在 bracken 打开时使用,且此时必填。填本次运行的 read 长度中位数。 |
-| `--skip_host_removal` | 关 | 只跳过第二级。见下面的警告。 |
-| `--l2_input` | `all_nonhuman` | `nonhuman_nonviral` 会让病毒 reads 绕过比对器:略快,但一条被误判为病毒的人源 read 就此逃过去宿主。 |
-| `--max_memory` | `128.GB` | 必须大于 kraken2 数据库体积。 |
+| `--mode` | `fast` | `full` (the assembly tier) is not implemented in v0.1 and fails with an explanation. |
+| `--kraken2_confidence` | `0.02` | Not kraken2's own default of 0. At 0 a single k-mer hit is enough to call a taxon, which made 61% of human and 38% of clean bacterial contigs look like phage. Raising it further will not remove plasmid/MGE false positives. |
+| `--db_has_decoy` | `auto` | `auto` reads the database's own taxonomy and reports human, bacterial and plasmid decoys separately. A declaration of `false` when any class is detected, or `true` when none is, produces an explicit inconsistency warning in the report. All three values can be given on the command line. |
+| `--min_reads` | `10` | Reporting floor. Rows below it are still printed, marked `below_threshold`. |
+| `--min_rpm` | `1.0` | Per million **non-host** reads. |
+| `--chopper_min_quality` | `10` | Mean Phred per read. |
+| `--chopper_min_length` | `200` | Minimum read length. |
+| `--skip_bracken` | `true` | Off by default, see above. Setting it `false` requires `--bracken_read_length`. |
+| `--bracken_read_length` | none | Used only when bracken is on, and then mandatory. The median read length of your run. |
+| `--skip_host_removal` | off | Skips level 2 only. See the warning below. |
+| `--l2_input` | `all_nonhuman` | `nonhuman_nonviral` lets viral reads bypass the aligner: slightly faster, but a human read misclassified as viral then escapes host depletion. |
+| `--max_memory` | `128.GB` | Must exceed the kraken2 database size. |
 | `--max_cpus` | `16` | |
 
-### 关于 `--db_has_decoy`
+### About `--db_has_decoy`
 
-三态参数,取值 `auto`(默认)、`true`、`false`,三个都能直接在命令行上给。
+A three-state parameter: `auto` (default), `true` or `false`. All three work on the command
+line.
 
-绝大多数情况保持默认 `auto` 即可 —— 它用 `kraken2-inspect` 读数据库自身的 taxonomy,
-比人工声明更可靠,而且探测不到的类别会报 `unknown` 并打 flag,不会替你猜。
-只有当你的库用了非常规的 taxid 组织方式、`auto` 报不出来时,才需要显式声明。
+Leave it at `auto` in almost every case. It reads the database's own taxonomy with
+`kraken2-inspect`, which is more reliable than a human declaration, and a class it cannot
+detect is reported as `unknown` and flagged rather than guessed. Declare a value explicitly
+only when your database organises taxids unconventionally and `auto` cannot see them.
 
 ### `--skip_host_removal`
 
-它只关掉**比对**这一级;kraken2 的第一级永远会跑。此时去宿主完全依赖数据库恰好认得出什么,
-而且根本不会发布任何无宿主 FASTQ。这样一次运行的输出不得离开本机构。这个选项是给开发和
-排查数据库覆盖度用的,不是给生产用的。
+It disables the **alignment** level only; the kraken2 level-1 pass always runs. Host
+depletion then depends entirely on what the database happens to recognise, and no host-free
+FASTQ is published at all. Output from such a run must not leave the institution. The
+option exists for development and for diagnosing database coverage, not for production.
 
-## 资源
+## Resources
 
-kraken2 会把整个数据库载入内存,所以 phamseek 同一时刻最多跑一个 kraken2 任务
-(`maxForks 1`)。并行跑它们会成倍放大内存需求,而且并不会更快:后续样本直接用 page cache,
-不必重新从磁盘读库;何况分类本身也不是瓶颈。
+kraken2 loads the entire database into RAM, so phamseek runs at most one kraken2 task at a
+time (`maxForks 1`). Running them in parallel multiplies the memory requirement and is not
+faster: later samples hit the page cache instead of re-reading the database from disk, and
+classification is not the bottleneck anyway.
 
-把 `--max_memory` 提到数据库体积之上。11 GB 的库峰值约 12 GB。
+Set `--max_memory` above the database size. An 11 GB database peaks around 12 GB.
 
-## 离线运行
+## Running offline
 
-除了下面这几步,其余全部离线:
+Everything is offline except these:
 
-1. `pixi install` 第一次会下载软件包(只有 `-profile pixi` 需要)。
-2. Nextflow 第一次运行时会把 `nf-validation` 插件下载到 `$NXF_HOME/plugins`。
+1. `pixi install` downloads packages the first time (only needed for `-profile pixi`).
+2. Nextflow downloads the `nf-validation` plugin into `$NXF_HOME/plugins` on first run.
+3. With a container profile, the first run pulls the image from Docker Hub and converts it
+   to a SIF.
 
-用容器时还多一次:第一次 `-profile apptainer` 会去 Docker Hub 拉镜像并转成 SIF。
+Once all three are cached, `NXF_OFFLINE=true` makes the run fully offline. For preparing
+them on a networked machine see [../deploy/INSTALL.md](../deploy/INSTALL.md); the offline
+bundle points `NXF_HOME` at the plugins shipped with it and layers
+[../deploy/offline.config](../deploy/offline.config) automatically.
 
-三样东西都缓存好之后设 `NXF_OFFLINE=true` 即可完全离线。在联网机器上预先准备它们的做法见
-[../deploy/INSTALL.md](../deploy/INSTALL.md);离线安装包会把 `NXF_HOME` 指向随包发出的插件目录,
-并自动叠加 [../deploy/offline.config](../deploy/offline.config)。
+## Troubleshooting
 
-## 排错
-
-| 现象 | 原因 |
+| What you see | Why |
 |---|---|
-| `unable to find kraken2 in $KRAKEN2_DB_PATH` | 从你的 shell 配置继承来的 `KRAKEN2_DB_PATH`。phamseek 会 unset 它并传绝对路径;你看到这条,说明是在流程之外调用了 kraken2。 |
-| `kraken2 database ... is incomplete` | 目录里缺 `hash.k2d`、`opts.k2d` 或 `taxo.k2d`。 |
-| `No host reference (*.mmi or FASTA) found` | 去构建索引,或者传 `--skip_host_removal` 并接受上面写明的后果。 |
-| `--bracken_read_length is required when bracken is enabled` | 打开了 bracken(`--skip_bracken false`)却没给读长。用 nanoq 报的中位 read 长度填上,或者让 bracken 保持关闭。 |
-| `expected 8 fields from the report join` | Nextflow 版本变动改变了 `join(remainder: true)` 的补位语义。流程会停下,而不是用可能错位的文件去拼报告。 |
-| `expected reports for N sample(s) but found M` | 有样本在分类和出报告之间掉了;汇总步骤拒绝产出一次残缺的运行。 |
-| `read order mismatch at record N` | kraken2 不再保持输入顺序,这会让流式的宿主拆分变得不安全。流程停止。 |
+| `unable to find kraken2 in $KRAKEN2_DB_PATH` | A `KRAKEN2_DB_PATH` inherited from your shell profile. phamseek unsets it and passes an absolute path, so seeing this means kraken2 was invoked outside the pipeline. |
+| `kraken2 database ... is incomplete` | `hash.k2d`, `opts.k2d` or `taxo.k2d` is missing from the directory. |
+| `No host reference (*.mmi or FASTA) found` | Build the index, or pass `--skip_host_removal` and accept the consequences stated above. |
+| `--bracken_read_length is required when bracken is enabled` | bracken was switched on (`--skip_bracken false`) without a read length. Supply the median read length nanoq reports, or leave bracken off. |
+| `--skip_bracken must be true or false` | A boolean was given something other than `true`/`false`. Command-line values arrive as strings, and Groovy reads any non-empty string as true, so the pipeline converts them explicitly rather than let `--skip_host_removal false` silently skip host depletion. |
+| `Process requirement exceeds available memory` | A task asked for more RAM than the machine has. Lower `--max_memory` (it is a ceiling, not a request). |
+| `expected 8 fields from the report join` | A Nextflow version change altered `join(remainder: true)` padding semantics. The pipeline stops rather than assemble a report from possibly mismatched files. |
+| `expected reports for N sample(s) but found M` | A sample was dropped between classification and reporting; the summary step refuses to emit a partial run. |
+| `read order mismatch at record N` | kraken2 no longer preserved input order, which makes the streaming host split unsafe. The pipeline stops. |
